@@ -123,7 +123,7 @@ check_status() {
     echo "║                    STATUS DOS SERVIÇOS                   ║"
     echo "╠═══════════════════════════════════════════════════════════╣"
     echo "║                                                           ║"
-    echo "║   🌐 Frontend Streamlit    → http://localhost:8501       ║"
+    echo "║   🌐 Frontend SPA          → http://localhost:8051       ║"
     echo "║   📚 Upload API           → http://localhost:8001/docs   ║"
     echo "║   🤖 AI Service           → http://localhost:8003/docs   ║"
     echo "║   📊 Report Service       → http://localhost:8004/docs   ║"
@@ -146,7 +146,7 @@ wait_for_services() {
         echo -ne "\r[${attempt}/${max_attempts}] Verificando..."
         
         # Verifica frontend
-        if curl -s http://localhost:8501 > /dev/null 2>&1; then
+        if curl -s http://localhost:8051 > /dev/null 2>&1; then
             log_success "Frontend pronto!"
             break
         fi
