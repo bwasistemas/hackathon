@@ -1,0 +1,33 @@
+# Environments
+.env
+.venv/
+venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Mac
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker
+docker-compose.override.yml
+.docker/
+
+# Temp files created during debugging
+infrastructure/rabbit.txt
+infrastructure/rabbit_metrics.txt
+*.log

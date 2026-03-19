@@ -1,0 +1,201 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/arch-analyzer
+
+jobs:
+  # ============================================
+  # LINT
+  # ============================================
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install linters
+        run: |
+          pip install ruff black
+
+      - name: Run Ruff
+        run: |
+          ruff check services/
+
+      - name: Run Black
+        run: |
+          black --check services/
+
+  # ============================================
+  # TEST - Upload Service
+  # ============================================
+  test-upload:
+    name: Test Upload Service
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: services/upload-service
+        run: |
+          pip install -r requirements.txt pytest pytest-asyncio
+
+      - name: Run tests
+        working-directory: services/upload-service
+        run: |
+          pytest tests/ -v
+
+  # ============================================
+  # TEST - AI Service
+  # ============================================
+  test-ai:
+    name: Test AI Service
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: services/ai-service
+        run: |
+          pip install -r requirements.txt pytest pytest-asyncio
+
+      - name: Run tests
+        working-directory: services/ai-service
+        run: |
+          pytest tests/ -v
+
+  # ============================================
+  # TEST - Report Service
+  # ============================================
+  test-report:
+    name: Test Report Service
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: services/report-service
+        run: |
+          pip install -r requirements.txt pytest pytest-asyncio
+
+      - name: Run tests
+        working-directory: services/report-service
+        run: |
+          pytest tests/ -v
+
+  # ============================================
+  # BUILD IMAGES
+  # ============================================
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [lint, test-upload, test-ai, test-report]
+    if: github.event_name == 'push'
+    strategy:
+      matrix:
+        service:
+          - upload
+          - processing
+          - ai
+          - report
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: services/${{ matrix.service == 'upload' && 'upload-service' || matrix.service == 'processing' && 'processing-worker' || matrix.service == 'ai' && 'ai-service' || 'report-service' }}/app
+          dockerfile: infrastructure/dockerfiles/Dockerfile.${{ matrix.service }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================
+  # DEPLOY - Local Development
+  # ============================================
+  deploy:
+    name: Deploy to Development
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Docker Compose
+        run: |
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+
+      - name: Copy environment file
+        run: |
+          cp infrastructure/.env.example infrastructure/.env
+
+      - name: Start services
+        run: |
+          cd infrastructure
+          docker-compose up -d
+
+      - name: Wait for services
+        run: |
+          sleep 30
+          docker ps
+
+      - name: Verify services
+        run: |
+          curl -f http://localhost:8001/health || exit 1
+          curl -f http://localhost:8003/health || exit 1
+          curl -f http://localhost:8004/health || exit 1

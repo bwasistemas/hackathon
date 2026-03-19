@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArchiAnalyzer - Central de Comando</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0a0a0f;
+            color: #e4e4e7;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated background */
+        .bg-gradient {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(ellipse at 20% 20%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(6, 182, 212, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(16, 185, 129, 0.04) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 40px 24px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+
+        .logo {
+            font-size: 48px;
+            font-weight: 700;
+            letter-spacing: -2px;
+            background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 50%, #10b981 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            letter-spacing: 4px;
+            color: #71717a;
+            text-transform: uppercase;
+        }
+
+        /* Quick Actions */
+        .quick-actions {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 48px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 13px;
+            letter-spacing: 0.5px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary {
+            background: #27272a;
+            color: #a1a1aa;
+            border: 1px solid #3f3f46;
+        }
+
+        .btn-secondary:hover {
+            background: #3f3f46;
+            color: #e4e4e7;
+            transform: translateY(-2px);
+        }
+
+        /* Section Title */
+        .section-title {
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            color: #71717a;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+            padding-left: 4px;
+        }
+
+        /* Services Grid */
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 16px;
+            margin-bottom: 48px;
+        }
+
+        .service-card {
+            background: linear-gradient(145deg, #18181b 0%, #0f0f12 100%);
+            border: 1px solid #27272a;
+            border-radius: 16px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .service-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 3px;
+            height: 100%;
+            background: var(--accent-color);
+            opacity: 0.5;
+        }
+
+        .service-card:hover {
+            border-color: var(--accent-color);
+            transform: translateY(-2px);
+        }
+
+        .service-card:hover::before {
+            opacity: 1;
+        }
+
+        .service-card .icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+            background: var(--accent-color);
+            color: white;
+            flex-shrink: 0;
+        }
+
+        .service-card .info {
+            flex: 1;
+        }
+
+        .service-card .name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #f4f4f5;
+            margin-bottom: 4px;
+        }
+
+        .service-card .desc {
+            font-size: 13px;
+            color: #71717a;
+        }
+
+        .service-card .status {
+            text-align: right;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-badge .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+
+        .status-badge.online {
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+        }
+
+        .status-badge.online .dot {
+            background: #10b981;
+            box-shadow: 0 0 8px #10b981;
+        }
+
+        .status-badge.offline {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+        }
+
+        .status-badge.offline .dot {
+            background: #ef4444;
+        }
+
+        .service-card .port {
+            font-size: 11px;
+            color: #52525b;
+            margin-top: 8px;
+        }
+
+        .service-card .btn-access {
+            margin-top: 12px;
+            display: inline-block;
+            padding: 8px 16px;
+            background: var(--accent-color);
+            color: white;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .service-card .btn-access:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        /* Credentials Section */
+        .credentials-section {
+            background: linear-gradient(145deg, #18181b 0%, #0f0f12 100%);
+            border: 1px solid #27272a;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 48px;
+        }
+
+        .credentials-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .credential-card {
+            background: #0a0a0f;
+            border-radius: 10px;
+            padding: 16px;
+            border-left: 3px solid var(--accent-color);
+        }
+
+        .credential-card .service-name {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: var(--accent-color);
+            margin-bottom: 12px;
+        }
+
+        .credential-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            font-size: 13px;
+        }
+
+        .credential-item .label {
+            color: #71717a;
+        }
+
+        .credential-item code {
+            background: #18181b;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 12px;
+        }
+
+        .credential-item code.user {
+            color: #10b981;
+        }
+
+        .credential-item code.pass {
+            color: #f59e0b;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 24px 0;
+            color: #52525b;
+            font-size: 12px;
+            letter-spacing: 1px;
+        }
+
+        /* Loading Animation */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .loading {
+            animation: pulse 1.5s infinite;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .logo {
+                font-size: 36px;
+            }
+
+            .quick-actions {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .btn {
+                width: 100%;
+                max-width: 300px;
+                text-align: center;
+            }
+
+            .services-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-gradient"></div>
+    
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1 class="logo">ArchiAnalyzer</h1>
+            <p class="subtitle">Central de Comando</p>
+        </header>
+
+        <!-- Quick Actions -->
+        <div class="quick-actions">
+            <a href="http://localhost:8501" class="btn btn-primary">Upload</a>
+            <a href="http://localhost:8501/dashboard" class="btn btn-secondary">Dashboard</a>
+            <a href="http://localhost:15672" target="_blank" class="btn btn-secondary">RabbitMQ</a>
+            <a href="http://localhost:3000" target="_blank" class="btn btn-secondary">Grafana</a>
+            <a href="http://localhost:9090" target="_blank" class="btn btn-secondary">Prometheus</a>
+        </div>
+
+        <!-- Services Status -->
+        <h2 class="section-title">Status do Sistema</h2>
+        <div class="services-grid" id="services-grid">
+            <!-- Services will be loaded dynamically -->
+        </div>
+
+        <!-- Credentials -->
+        <div class="credentials-section">
+            <h2 class="section-title">Credenciais de Acesso</h2>
+            <div class="credentials-grid">
+                <div class="credential-card" style="--accent-color: #f97316;">
+                    <div class="service-name">GRAFANA</div>
+                    <div class="credential-item">
+                        <span class="label">USER</span>
+                        <code class="user">admin</code>
+                    </div>
+                    <div class="credential-item">
+                        <span class="label">PASS</span>
+                        <code class="pass">fiap</code>
+                    </div>
+                </div>
+                <div class="credential-card" style="--accent-color: #ec4899;">
+                    <div class="service-name">RABBITMQ</div>
+                    <div class="credential-item">
+                        <span class="label">USER</span>
+                        <code class="user">archanalyzer</code>
+                    </div>
+                    <div class="credential-item">
+                        <span class="label">PASS</span>
+                        <code class="pass">fiap</code>
+                    </div>
+                </div>
+                <div class="credential-card" style="--accent-color: #6366f1;">
+                    <div class="service-name">POSTGRESQL</div>
+                    <div class="credential-item">
+                        <span class="label">USER</span>
+                        <code class="user">archanalyzer</code>
+                    </div>
+                    <div class="credential-item">
+                        <span class="label">PASS</span>
+                        <code class="pass">fiap</code>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>ARCHANALYZER v1.0.0 | <span id="datetime"></span></p>
+        </footer>
+    </div>
+
+    <script>
+        const services = [
+            { name: 'Streamlit Frontend', desc: 'Interface Web', port: 8501, color: '#8b5cf6', icon: 'ST', url: 'http://localhost:8501' },
+            { name: 'Upload API', desc: 'API de Upload', port: 8001, color: '#3b82f6', icon: 'UP', url: 'http://localhost:8001/docs' },
+            { name: 'AI Service', desc: 'Servico de Analise IA', port: 8003, color: '#10b981', icon: 'AI', url: 'http://localhost:8003/docs' },
+            { name: 'Report API', desc: 'API de Relatorios', port: 8004, color: '#f59e0b', icon: 'RP', url: 'http://localhost:8004/docs' },
+            { name: 'Grafana', desc: 'Dashboards', port: 3000, color: '#f97316', icon: 'GR', url: 'http://localhost:3000' },
+            { name: 'Prometheus', desc: 'Metricas', port: 9090, color: '#ef4444', icon: 'PM', url: 'http://localhost:9090' },
+            { name: 'RabbitMQ', desc: 'Message Broker', port: 15672, color: '#ec4899', icon: 'RM', url: 'http://localhost:15672' },
+            { name: 'PostgreSQL', desc: 'Banco de Dados', port: 5432, color: '#6366f1', icon: 'DB', url: null },
+        ];
+
+        async function checkService(port) {
+            return new Promise((resolve) => {
+                const start = Date.now();
+                const xhr = new XMLHttpRequest();
+                xhr.open('GET', `http://localhost:${port}`, true);
+                xhr.timeout = 2000;
+                
+                xhr.onload = () => resolve(true);
+                xhr.onerror = () => resolve(false);
+                xhr.ontimeout = () => resolve(false);
+                
+                xhr.send();
+                
+                setTimeout(() => resolve(false), 2000);
+            });
+        }
+
+        async function loadServices() {
+            const grid = document.getElementById('services-grid');
+            
+            for (const service of services) {
+                const isOnline = await checkService(service.port);
+                
+                const card = document.createElement('div');
+                card.className = 'service-card';
+                card.style.setProperty('--accent-color', service.color);
+                
+                let btnHtml = '';
+                if (service.url) {
+                    btnHtml = `<a href="${service.url}" target="_blank" class="btn-access">ACESSAR</a>`;
+                }
+                
+                card.innerHTML = `
+                    <div class="icon">${service.icon}</div>
+                    <div class="info">
+                        <div class="name">${service.name}</div>
+                        <div class="desc">${service.desc}</div>
+                        ${btnHtml}
+                    </div>
+                    <div class="status">
+                        <div class="status-badge ${isOnline ? 'online' : 'offline'}">
+                            <span class="dot"></span>
+                            ${isOnline ? 'Online' : 'Offline'}
+                        </div>
+                        <div class="port">:${service.port}</div>
+                    </div>
+                `;
+                
+                grid.appendChild(card);
+            }
+        }
+
+        function updateDateTime() {
+            const now = new Date();
+            const options = { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            };
+            document.getElementById('datetime').textContent = 
+                now.toLocaleDateString('pt-BR', options).replace(',', ' |');
+        }
+
+        // Initialize
+        loadServices();
+        updateDateTime();
+        setInterval(updateDateTime, 60000);
+        
+        // Refresh services every 15 seconds
+        setInterval(() => {
+            const grid = document.getElementById('services-grid');
+            grid.innerHTML = '';
+            loadServices();
+        }, 15000);
+    </script>
+</body>
+</html>

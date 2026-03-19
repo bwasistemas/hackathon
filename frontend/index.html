@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArchiAnalyzer - Comando Central</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css?v=3">
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+    <div class="bg-gradient"></div>
+    
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="logo">
+                <img src="fiap-png.png" alt="FIAP Logo" class="logo-icon">
+                <span>ArchiAnalyzer</span>
+            </div>
+            
+            <ul class="nav-links">
+                <li>
+                    <button class="nav-btn active" data-target="view-dashboard">
+                        <i data-lucide="layout-dashboard"></i>
+                        <span>Dashboard</span>
+                    </button>
+                </li>
+                <li>
+                    <button class="nav-btn" data-target="view-upload">
+                        <i data-lucide="upload-cloud"></i>
+                        <span>Nova Análise</span>
+                    </button>
+                </li>
+                <li>
+                    <button class="nav-btn" data-target="view-services">
+                        <i data-lucide="server"></i>
+                        <span>Serviços & Infra</span>
+                    </button>
+                </li>
+            </ul>
+
+            <div class="sidebar-footer">
+                <p>v1.0.0 | Online</p>
+                <div id="datetime"></div>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            
+            <!-- Dashboard View -->
+            <section id="view-dashboard" class="view-section active">
+                <header class="section-header">
+                    <h2>Dashboard de Análises</h2>
+                    <p>Acompanhe o status dos diagramas processados em tempo real.</p>
+                </header>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">
+                            <i data-lucide="files"></i>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-label">Total de Análises</span>
+                            <span class="stat-value" id="stat-total">0</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: rgba(234, 179, 8, 0.1); color: #eab308;">
+                            <i data-lucide="loader"></i>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-label">Em Processamento</span>
+                            <span class="stat-value" id="stat-processing">0</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">
+                            <i data-lucide="check-circle"></i>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-label">Concluídas</span>
+                            <span class="stat-value" id="stat-done">0</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: rgba(239, 68, 68, 0.1); color: #ef4444;">
+                            <i data-lucide="alert-triangle"></i>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-label">Com Erro</span>
+                            <span class="stat-value" id="stat-error">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-panel mt-6">
+                    <div class="panel-header">
+                        <h3>Análises Recentes</h3>
+                        <button class="btn btn-sm" id="btn-refresh-dashboard" onclick="fetchAnalyses()">
+                            <i data-lucide="refresh-cw"></i> Atualizar
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Arquivo</th>
+                                    <th>Data de Criação</th>
+                                    <th>Status</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="analyses-table-body">
+                                <tr>
+                                    <td colspan="5" class="empty-state">Carregando dados...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Upload View -->
+            <section id="view-upload" class="view-section">
+                <header class="section-header">
+                    <h2>Nova Análise de Arquitetura</h2>
+                    <p>Faça o upload de um diagrama em imagem (PNG, JPG) ou PDF.</p>
+                </header>
+
+                <div class="glass-panel">
+                    <div class="upload-container" id="upload-zone">
+                        <input type="file" id="file-input" accept="image/png, image/jpeg, image/jpg, application/pdf" hidden />
+                        <div class="upload-content">
+                            <div class="upload-icon-wrapper">
+                                <i data-lucide="upload-cloud" class="upload-icon"></i>
+                            </div>
+                            <h3>Arraste e solte o seu diagrama</h3>
+                            <p class="upload-hint">ou clique para selecionar do computador</p>
+                            <span class="upload-limits">Máx 10MB • PNG, JPG, PDF</span>
+                            <button class="btn btn-primary mt-4" onclick="document.getElementById('file-input').click()">Selecionar Arquivo</button>
+                        </div>
+                        <div class="file-preview hidden" id="file-preview">
+                            <div class="preview-info">
+                                <i data-lucide="file" class="file-type-icon"></i>
+                                <div class="file-details">
+                                    <span class="file-name" id="preview-filename">diagrama.png</span>
+                                    <span class="file-size" id="preview-size">1.2 MB</span>
+                                </div>
+                                <button class="btn-icon" id="btn-remove-file" onclick="removeSelectedFile()">
+                                    <i data-lucide="x"></i>
+                                </button>
+                            </div>
+                            <button class="btn btn-primary w-full mt-4" id="btn-submit-upload" onclick="submitUpload()">
+                                Iniciar Análise
+                            </button>
+                        </div>
+                    </div>
+                    <div class="upload-status hidden" id="upload-status">
+                        <!-- Dynamic status will be placed here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Services View -->
+            <section id="view-services" class="view-section">
+                <header class="section-header">
+                    <h2>Infraestrutura e Serviços</h2>
+                    <p>Status em tempo real de todos os microsserviços do cluster.</p>
+                </header>
+
+                <div id="services-container">
+                    <!-- Loaded via JS -->
+                </div>
+
+                <div class="glass-panel mt-6">
+                    <div class="panel-header" style="margin-bottom: 20px;">
+                        <h3>Credenciais de Acesso Seguras</h3>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-card" style="align-items: flex-start; flex-direction: column; gap: 8px;">
+                            <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
+                                <i data-lucide="lock" style="width:14px;height:14px;"></i> RABBITMQ
+                            </div>
+                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
+                                <span style="color:var(--text-muted)">User:</span>
+                                <code style="color:#10b981; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap</code>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px;">
+                                <span style="color:var(--text-muted)">Pass:</span>
+                                <code style="color:#f59e0b; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap</code>
+                            </div>
+                        </div>
+                        <div class="stat-card" style="align-items: flex-start; flex-direction: column; gap: 8px;">
+                            <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
+                                <i data-lucide="lock" style="width:14px;height:14px;"></i> GRAFANA
+                            </div>
+                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
+                                <span style="color:var(--text-muted)">User:</span>
+                                <code style="color:#10b981; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap</code>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px;">
+                                <span style="color:var(--text-muted)">Pass:</span>
+                                <code style="color:#f59e0b; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap</code>
+                            </div>
+                        </div>
+                        <div class="stat-card" style="align-items: flex-start; flex-direction: column; gap: 8px;">
+                            <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
+                                <i data-lucide="lock" style="width:14px;height:14px;"></i> POSTGRESQL
+                            </div>
+                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
+                                <span style="color:var(--text-muted)">User:</span>
+                                <code style="color:#10b981; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap</code>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px;">
+                                <span style="color:var(--text-muted)">Pass:</span>
+                                <code style="color:#f59e0b; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap</code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Report Modal -->
+            <div id="report-modal" class="modal hidden">
+                <div class="modal-backdrop" onclick="closeReportModal()"></div>
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>Relatório de Arquitetura</h2>
+                        <button class="btn-icon" onclick="closeReportModal()"><i data-lucide="x"></i></button>
+                    </div>
+                    <div class="modal-body" id="report-modal-body">
+                        <!-- Loaded dynamically -->
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="script.js?v=5"></script>
+</body>
+</html>

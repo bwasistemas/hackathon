@@ -1,0 +1,202 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: arch-analyzer-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fiap}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fiap}
+      POSTGRES_DB: ${POSTGRES_DB:-fiap}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - arch-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fiap} -d ${POSTGRES_DB:-fiap}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: arch-analyzer-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-fiap}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-fiap}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - arch-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  upload-service:
+    build:
+      context: ../services/upload-service
+      dockerfile: Dockerfile
+    container_name: arch-analyzer-upload
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=${RABBITMQ_USER:-fiap}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-fiap}
+      - SERVICE_NAME=upload-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
+    networks:
+      - arch-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  ai-service:
+    build:
+      context: ../services/ai-service
+      dockerfile: Dockerfile
+    container_name: arch-analyzer-ai
+    ports:
+      - "8003:8003"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=${RABBITMQ_USER:-fiap}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-fiap}
+      - SERVICE_NAME=ai-service
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+    env_file:
+      - ../.env
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - arch-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  report-service:
+    build:
+      context: ../services/report-service
+      dockerfile: Dockerfile
+    container_name: arch-analyzer-report
+    ports:
+      - "8004:8004"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}
+      - SERVICE_NAME=report-service
+    env_file:
+      - ../.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - arch-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: arch-analyzer-frontend
+    ports:
+      - "8051:8051"
+    depends_on:
+      - upload-service
+      - report-service
+    networks:
+      - arch-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8051/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: arch-analyzer-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - arch-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: arch-analyzer-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-fiap}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-fiap}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    env_file:
+      - ../.env
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - arch-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  arch-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  uploads_data:
+  prometheus_data:
+  grafana_data:
+

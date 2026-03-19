@@ -1,0 +1,52 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'arch-analyzer'
+    environment: 'development'
+
+alerting:
+  alertmanagers: []
+
+rule_files: []
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: /metrics
+
+  # Upload Service
+  - job_name: 'upload-service'
+    static_configs:
+      - targets: ['upload-service:8001']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # AI Service
+  - job_name: 'ai-service'
+    static_configs:
+      - targets: ['ai-service:8003']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # Report Service
+  - job_name: 'report-service'
+    static_configs:
+      - targets: ['report-service:8004']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # RabbitMQ (native Prometheus plugin)
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq:15692']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # PostgreSQL Exporter (if added)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 30s

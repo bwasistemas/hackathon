@@ -1,0 +1,65 @@
+# ============================================
+# Stage 1: Builder
+# ============================================
+FROM python:3.12-slim as builder
+
+WORKDIR /app
+
+# Install system dependencies for OCR (tesseract, poppler)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    poppler-utils \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# ============================================
+# Stage 2: Runtime
+# ============================================
+FROM python:3.12-slim
+
+# Install OCR dependencies and runtime requirements
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    poppler-utils \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd --gid 1000 appgroup && \
+    useradd --uid 1000 --gid appgroup --shell /bin/bash --create-home appuser
+
+WORKDIR /app
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy application code
+COPY --chown=appuser:appgroup ./app ./app
+
+# Create uploads directory
+RUN mkdir -p /app/uploads && chown -R appuser:appgroup /app/uploads
+
+# Switch to non-root user
+USER appuser
+
+# Expose port (for debugging/metrics)
+EXPOSE 8002
+
+# Healthcheck (worker-based, check if process is running)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD pgrep -f "processing_worker" || exit 1
+
+# Run worker
+CMD ["python", "-m", "app.worker"]
