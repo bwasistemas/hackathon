@@ -6,6 +6,6 @@
 
 - Desenhar a arquitetura do sistema
 
-## Upload de sistemas
+## Upload de arquivos
 
 ## Serviço de AI
