@@ -155,7 +155,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: services/${{ matrix.service == 'upload' && 'upload-service' || matrix.service == 'processing' && 'processing-worker' || matrix.service == 'ai' && 'ai-service' || 'report-service' }}/app
+          context: services/${{ matrix.service == 'upload' && 'upload-service' || matrix.service == 'processing' && 'processing-worker' || matrix.service == 'ai' && 'ai-service' || 'report-service' }}${{ matrix.service != 'ai' && '/app' || '' }}
           dockerfile: infrastructure/dockerfiles/Dockerfile.${{ matrix.service }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}

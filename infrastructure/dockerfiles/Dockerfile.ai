@@ -24,9 +24,11 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # ============================================
 FROM python:3.12-slim
 
-# Install curl for healthcheck
+# curl (healthcheck), tesseract + poppler (OCR / PDF)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    tesseract-ocr \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -39,7 +41,7 @@ WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy application code
+# Copy application package (build context: services/ai-service)
 COPY --chown=appuser:appgroup ./app ./app
 
 # Switch to non-root user
