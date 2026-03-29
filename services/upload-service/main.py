@@ -35,21 +35,18 @@ MINIO_USE_SSL = os.getenv("MINIO_USE_SSL", "false").lower() == "true"
 
 pool: asyncpg.Pool = None
 rabbit_connection: aio_pika.RobustConnection = None
-minio_client = None
-
-
+@asynccontextmanager
 async def get_minio_client():
     """Get or create MinIO/S3 client."""
-    global minio_client
-    if minio_client is None:
-        minio_client = aiobotocore.session.get_session().create_client(
-            "s3",
-            endpoint_url=f"{'https' if MINIO_USE_SSL else 'http'}://{MINIO_ENDPOINT}",
-            aws_access_key_id=MINIO_ACCESS_KEY,
-            aws_secret_access_key=MINIO_SECRET_KEY,
-            region_name=MINIO_REGION,
-        )
-    return minio_client
+    session = aiobotocore.session.get_session()
+    async with session.create_client(
+        "s3",
+        endpoint_url=f"{'https' if MINIO_USE_SSL else 'http'}://{MINIO_ENDPOINT}",
+        aws_access_key_id=MINIO_ACCESS_KEY,
+        aws_secret_access_key=MINIO_SECRET_KEY,
+        region_name=MINIO_REGION,
+    ) as client:
+        yield client
 
 
 async def ensure_bucket_exists(client):
@@ -62,15 +59,15 @@ async def ensure_bucket_exists(client):
 
 async def upload_to_minio(file_content: bytes, object_name: str, content_type: str = "application/octet-stream") -> str:
     """Upload file to MinIO and return the object URL."""
-    client = await get_minio_client()
-    await ensure_bucket_exists(client)
+    async with get_minio_client() as client:
+        await ensure_bucket_exists(client)
     
-    await client.put_object(
-        Bucket=MINIO_BUCKET,
-        Key=object_name,
-        Body=file_content,
-        ContentType=content_type,
-    )
+        await client.put_object(
+            Bucket=MINIO_BUCKET,
+            Key=object_name,
+            Body=file_content,
+            ContentType=content_type,
+        )
     
     # Return MinIO URL
     return f"minio://{MINIO_BUCKET}/{object_name}"
@@ -120,9 +117,9 @@ async def lifespan(app: FastAPI):
     
     # Initialize MinIO client and ensure bucket exists
     try:
-        minio = await get_minio_client()
-        await ensure_bucket_exists(minio)
-        print(f"MinIO bucket '{MINIO_BUCKET}' ready")
+        async with get_minio_client() as minio:
+            await ensure_bucket_exists(minio)
+            print(f"MinIO bucket '{MINIO_BUCKET}' ready")
     except Exception as e:
         print(f"Warning: Could not connect to MinIO: {e}")
     
@@ -130,8 +127,6 @@ async def lifespan(app: FastAPI):
     
     await pool.close()
     await rabbit_connection.close()
-    if minio_client:
-        await minio_client.close()
 
 
 app = FastAPI(
