@@ -73,11 +73,19 @@ services:
       - RABBITMQ_PORT=5672
       - RABBITMQ_USER=${RABBITMQ_USER:-fiap}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-fiap}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-fiap}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-fiap1234}
+      - MINIO_BUCKET=${MINIO_BUCKET:-fiap}
+      - MINIO_REGION=${MINIO_REGION:-us-east-1}
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
       - SERVICE_NAME=upload-service
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     volumes:
       - uploads_data:/app/uploads
@@ -103,6 +111,12 @@ services:
       - RABBITMQ_PORT=5672
       - RABBITMQ_USER=${RABBITMQ_USER:-fiap}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-fiap}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-fiap}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-fiap1234}
+      - MINIO_BUCKET=${MINIO_BUCKET:-fiap}
+      - MINIO_REGION=${MINIO_REGION:-us-east-1}
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
       - SERVICE_NAME=ai-service
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
@@ -115,6 +129,8 @@ services:
       postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     networks:
       - arch-network

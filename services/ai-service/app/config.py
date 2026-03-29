@@ -13,6 +13,12 @@ class Settings:
     rabbitmq_port: int
     rabbitmq_user: str
     rabbitmq_password: str
+    minio_endpoint: str
+    minio_access_key: str
+    minio_secret_key: str
+    minio_bucket: str
+    minio_region: str
+    minio_use_ssl: bool
 
 
 def load_settings() -> Settings:
@@ -28,4 +34,10 @@ def load_settings() -> Settings:
         rabbitmq_port=int(os.getenv("RABBITMQ_PORT", "5672")),
         rabbitmq_user=os.getenv("RABBITMQ_USER", "fiap"),
         rabbitmq_password=os.getenv("RABBITMQ_PASSWORD", "fiap"),
+        minio_endpoint=os.getenv("MINIO_ENDPOINT", "minio:9000"),
+        minio_access_key=os.getenv("MINIO_ACCESS_KEY", "fiap"),
+        minio_secret_key=os.getenv("MINIO_SECRET_KEY", "fiap1234"),
+        minio_bucket=os.getenv("MINIO_BUCKET", "fiap"),
+        minio_region=os.getenv("MINIO_REGION", "us-east-1"),
+        minio_use_ssl=os.getenv("MINIO_USE_SSL", "false").lower() == "true",
     )
