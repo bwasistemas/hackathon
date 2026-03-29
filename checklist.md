@@ -12,7 +12,7 @@
 - [ ] Revisar arquitetura para analisar a necessidade de novos microsserviços
 - [ ] Revisar comunicação entre o serviço de AI com a postgres, cada microsserviço deve ter sem BD próprio. Uma sugestão é publicar a mensagem no rabbit com o payload do que deve ser tratado, para evitar a comunicação do serviço de AI com o postgres e manter a separação
 - [X] Subir ambiente do minio para integrar nos serviços
-- [ ] Atualizar código para  usar o blob storage, para armazenar os arquivos dos diagramas enviados. 
+- [X] Atualizar código para  usar o blob storage, para armazenar os arquivos dos diagramas enviados. 
 - [ ] Criar testes automatizados (unitários)
 - [ ] Analisar a necessidade de utilizar um API gateway
 
