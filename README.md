@@ -6,7 +6,7 @@ Sistema de análise automatizada de diagramas de arquitetura de software para ha
 
 ``` text
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   Frontend      │────▶│  Upload Service  │────▶│    RabbitMQ     │
+│   Frontend       │────▶│  Upload Service  │────▶│    RabbitMQ     │
 │  (Nginx/SPA)    │     │   (FastAPI)      │     │   (Message Q)   │
 │   :8051         │     │   :8001          │     │   :5672/:15672  │
 └─────────────────┘     └──────────────────┘     └────────┬────────┘
@@ -14,10 +14,10 @@ Sistema de análise automatizada de diagramas de arquitetura de software para ha
            ┌─────────────────────────────────────────────┘
            │
            ▼
-┌──────────────────┐          ┌──────────────────┐
-│   AI Service     │          │   PostgreSQL     │
-│   (LLM + OCR)    │─────────▶│   :5432          │
-│   :8003          │          └──────────────────┘
+┌──────────────────┐          ┌──────────────────┐        ┌─────────────────┐
+│   AI Service     │          │   PostgreSQL     │        │     MinIO       │
+│   (LLM + OCR)    │─────────▶│   :5432          │        │  :9000/:9001    │
+│   :8003          │          └──────────────────┘        └─────────────────┘
 └──────────────────┘                 ▲
            │                         │
            └─────────────────────────┘
@@ -68,6 +68,9 @@ docker-compose up -d
 | **AI API** | http://localhost:8003/docs | - |
 | **Report API** | http://localhost:8004/docs | - |
 | **RabbitMQ** | http://localhost:15672 | fiap / fiap |
+| **PostgreSQL** | localhost:5432 | fiap / fiap |
+| **MinIO Console** | http://localhost:9001 | minioadmin / minioadmin |
+| **MinIO API** | http://localhost:9000 | minioadmin / minioadmin |
 | **Prometheus** | http://localhost:9090 | - |
 | **Grafana** | http://localhost:3000 | fiap / fiap |
 
@@ -125,6 +128,10 @@ LLM_MODEL=deepseek/deepseek-chat
 # Grafana
 GRAFANA_USER=fiap
 GRAFANA_PASSWORD=fiap
+
+# MinIO (Object Storage)
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin
 ```
 
 ## Funcionalidades
@@ -133,6 +140,7 @@ GRAFANA_PASSWORD=fiap
 - Suporte a PNG, JPG, JPEG, PDF
 - Limite de 10MB por arquivo
 - Pré-visualização antes do envio
+- Armazenamento de arquivos no MinIO
 
 ### Processamento (AI Service Unificado)
 - Consumo assíncrono via RabbitMQ (`aio-pika`).
@@ -220,6 +228,13 @@ docker-compose logs postgres
 ```bash
 docker-compose logs rabbitmq
 # Verifique credenciais no .env
+```
+
+### MinIO não conecta
+```bash
+docker-compose logs minio
+# Verifique as credenciais no .env
+# Console: http://localhost:9001
 ```
 
 ### Frontend não conecta no backend
