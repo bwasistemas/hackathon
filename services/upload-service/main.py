@@ -108,6 +108,9 @@ async def lifespan(app: FastAPI):
                 updated_at TIMESTAMP DEFAULT NOW()
             )
         """)
+        await conn.execute("""
+            ALTER TABLE uploads ADD COLUMN IF NOT EXISTS minio_url TEXT
+        """)
     
     # Connect to RabbitMQ
     rabbit_connection = await aio_pika.connect_robust(
