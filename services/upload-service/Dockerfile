@@ -12,7 +12,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application
-COPY main.py .
+COPY app/ ./app/
 
 # Create uploads directory
 RUN mkdir -p /app/uploads
@@ -21,4 +21,4 @@ RUN mkdir -p /app/uploads
 EXPOSE 8001
 
 # Run
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
