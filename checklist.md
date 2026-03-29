@@ -7,8 +7,8 @@
 
 ## Arquitetura do Sistema
 
-- [ ] Desenhar a arquitetura do sistema
-- [ ] Definir arquitetura de cada microsserviço (clean ou hexagonal)
+- [x] Desenhar a arquitetura do sistema
+- [x] Definir arquitetura de cada microsserviço (clean ou hexagonal)
 - [ ] Revisar arquitetura para analisar a necessidade de novos microsserviços
 - [ ] Revisar comunicação entre o serviço de AI com a postgres, cada microsserviço deve ter sem BD próprio. Uma sugestão é publicar a mensagem no rabbit com o payload do que deve ser tratado, para evitar a comunicação do serviço de AI com o postgres e manter a separação
 - [ ] Utilizar o [minio](https://www.min.io/) como o blob storage, para armazenar os arquivos dos diagramas enviados.
