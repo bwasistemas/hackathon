@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error><Code>InvalidRequest</Code><Message>The authorization mechanism you have provided is not supported. Please use AWS4-HMAC-SHA256.</Message><Resource>/arquitetura-bucket/seudocumento.pdf</Resource><RequestId>18A16BD72792C58E</RequestId><HostId>dd9025bab4ad464b049177c95eb6ebf374d3b3fd1af9251148b658df7ac2e3e8</HostId></Error>
