@@ -181,8 +181,17 @@
                     </div>
                     <div class="stats-grid">
                         <div class="stat-card" style="align-items: flex-start; flex-direction: column; gap: 8px;">
-                            <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
-                                <i data-lucide="lock" style="width:14px;height:14px;"></i> RABBITMQ
+                            <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                                <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
+                                    <i data-lucide="message-square" style="width:14px;height:14px;"></i> MENSAGERIA
+                                </div>
+                                <span class="badge done" style="font-size:10px;">
+                                    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;margin-right:2px;"></span>On
+                                </span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
+                                <span style="color:var(--text-muted)">Porta:</span>
+                                <code style="color:#3b82f6; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">:5672</code>
                             </div>
                             <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
                                 <span style="color:var(--text-muted)">User:</span>
@@ -194,8 +203,17 @@
                             </div>
                         </div>
                         <div class="stat-card" style="align-items: flex-start; flex-direction: column; gap: 8px;">
-                            <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
-                                <i data-lucide="lock" style="width:14px;height:14px;"></i> GRAFANA
+                            <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                                <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
+                                    <i data-lucide="database" style="width:14px;height:14px;"></i> DADOS
+                                </div>
+                                <span class="badge done" style="font-size:10px;">
+                                    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;margin-right:2px;"></span>On
+                                </span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
+                                <span style="color:var(--text-muted)">Porta:</span>
+                                <code style="color:#3b82f6; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">:5432</code>
                             </div>
                             <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
                                 <span style="color:var(--text-muted)">User:</span>
@@ -207,8 +225,17 @@
                             </div>
                         </div>
                         <div class="stat-card" style="align-items: flex-start; flex-direction: column; gap: 8px;">
-                            <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
-                                <i data-lucide="lock" style="width:14px;height:14px;"></i> POSTGRESQL
+                            <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                                <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
+                                    <i data-lucide="activity" style="width:14px;height:14px;"></i> MONITORAMENTO
+                                </div>
+                                <span class="badge done" style="font-size:10px;">
+                                    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;margin-right:2px;"></span>On
+                                </span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
+                                <span style="color:var(--text-muted)">Porta:</span>
+                                <code style="color:#3b82f6; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">:3000</code>
                             </div>
                             <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
                                 <span style="color:var(--text-muted)">User:</span>
@@ -217,6 +244,32 @@
                             <div style="display:flex; justify-content:space-between; width:100%; font-size:13px;">
                                 <span style="color:var(--text-muted)">Pass:</span>
                                 <code style="color:#f59e0b; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap</code>
+                            </div>
+                        </div>
+                        <div class="stat-card" style="align-items: flex-start; flex-direction: column; gap: 8px;">
+                            <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                                <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
+                                    <i data-lucide="hard-drive" style="width:14px;height:14px;"></i> STORAGE <span style="font-weight:400; opacity:0.6;">(S3)</span>
+                                </div>
+                                <span class="badge done" style="font-size:10px;">
+                                    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;margin-right:2px;"></span>On
+                                </span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
+                                <span style="color:var(--text-muted)">Porta:</span>
+                                <code style="color:#3b82f6; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">:9001</code>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
+                                <span style="color:var(--text-muted)">User:</span>
+                                <code style="color:#10b981; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap</code>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px;">
+                                <span style="color:var(--text-muted)">Pass:</span>
+                                <code style="color:#f59e0b; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap1234</code>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:6px; width:100%; margin-top:4px;">
+                                <i data-lucide="external-link" style="width:12px;height:12px; color:#8b5cf6;"></i>
+                                <a href="http://localhost:9001" target="_blank" style="font-size:12px; color:#8b5cf6; text-decoration:none;">Acessar Console</a>
                             </div>
                         </div>
                     </div>
