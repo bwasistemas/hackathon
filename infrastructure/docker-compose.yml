@@ -122,7 +122,7 @@ services:
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
     env_file:
-      - ../.env
+      - .env
     volumes:
       - uploads_data:/app/uploads
     depends_on:
@@ -152,7 +152,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}
       - SERVICE_NAME=report-service
     env_file:
-      - ../.env
+      - .env
     depends_on:
       postgres:
         condition: service_healthy
@@ -211,7 +211,7 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-fiap}
       - GF_USERS_ALLOW_SIGN_UP=false
     env_file:
-      - ../.env
+      - .env
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
