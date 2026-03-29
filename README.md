@@ -69,8 +69,8 @@ docker-compose up -d
 | **Report API** | http://localhost:8004/docs | - |
 | **RabbitMQ** | http://localhost:15672 | fiap / fiap |
 | **PostgreSQL** | localhost:5432 | fiap / fiap |
-| **MinIO Console** | http://localhost:9001 | minioadmin / minioadmin |
-| **MinIO API** | http://localhost:9000 | minioadmin / minioadmin |
+| **MinIO Console** | http://localhost:9001 | fiap / fiap1234 |
+| **MinIO API** | http://localhost:9000 | fiap / fiap1234 |
 | **Prometheus** | http://localhost:9090 | - |
 | **Grafana** | http://localhost:3000 | fiap / fiap |
 
@@ -130,8 +130,8 @@ GRAFANA_USER=fiap
 GRAFANA_PASSWORD=fiap
 
 # MinIO (Object Storage)
-MINIO_ROOT_USER=minioadmin
-MINIO_ROOT_PASSWORD=minioadmin
+MINIO_ROOT_USER=fiap
+MINIO_ROOT_PASSWORD=fiap1234
 ```
 
 ## Funcionalidades
@@ -236,6 +236,44 @@ docker-compose logs minio
 # Verifique as credenciais no .env
 # Console: http://localhost:9001
 ```
+
+## MinIO (Object Storage)
+
+### Listar arquivos
+```bash
+# Via mc (minio client)
+docker exec arch-analyzer-minio mc ls local/fiap/
+
+# Via curl
+curl -s http://localhost:9000/fiap/ -u fiap:fiap1234
+```
+
+### Baixar arquivo
+```bash
+# Via curl (salva no diretório atual)
+curl -O http://localhost:9000/fiap/arquivo.png -u fiap:fiap1234
+
+# Via docker cp
+docker cp arch-analyzer-minio:/tmp/arquivo.png ./arquivo.png
+
+# Via mc
+docker exec arch-analyzer-minio mc cp local/fiap/arquivo.png /tmp/
+docker cp arch-analyzer-minio:/tmp/arquivo.png ./arquivo.png
+```
+
+### Upload de arquivo
+```bash
+# Via curl
+curl -X PUT http://localhost:9000/fiap/arquivo.png \
+  -u fiap:fiap1234 \
+  -T ./arquivo.png
+
+# Via mc
+docker exec -i arch-analyzer-minio mc cp ./arquivo.png local/fiap/
+```
+
+**Credenciais:** `fiap` / `fiap1234`
+**Bucket padrão:** `fiap`
 
 ### Frontend não conecta no backend
 ```bash
