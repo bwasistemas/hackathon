@@ -12,3 +12,7 @@ asyncpg
 aiohttp
 pdf2image
 prometheus-fastapi-instrumentator==7.0.0
+
+strands-agents==0.0.1
+strands-agents[openai]==0.0.1
+strands-agents-tools==0.0.1

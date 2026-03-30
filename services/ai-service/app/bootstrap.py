@@ -11,12 +11,11 @@ from app.adapters.inbound.rabbitmq_consumer import (
     start_diagram_upload_consumer,
 )
 from app.adapters.outbound.asyncpg_uploads import create_upload_repository
-from app.adapters.outbound.openai_adapter import OpenAiLlmAdapter, build_openai_client
+from app.adapters.outbound.strands_multi_agents_adapter import SwarmLlmAdapter, build_multi_agents
 from app.adapters.outbound.tesseract_ocr import TesseractTextExtractor
 from app.application.analyze_diagram import AnalyzeDiagramUseCase
 from app.application.process_diagram_upload import ProcessDiagramUploadUseCase
 from app.config import load_settings
-
 
 def create_app() -> FastAPI:
     settings = load_settings()
@@ -25,12 +24,8 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         upload_repo, db_pool = await create_upload_repository(settings.database_url)
         app.state.db_pool = db_pool
-
-        openai_client = build_openai_client(
-            settings.openai_api_key,
-            settings.openai_base_url,
-        )
-        llm = OpenAiLlmAdapter(openai_client, settings.llm_model)
+        multi_agents = build_multi_agents()
+        llm = SwarmLlmAdapter(multi_agents)
         ocr = TesseractTextExtractor()
 
         app.state.analyze_use_case = AnalyzeDiagramUseCase(llm)
