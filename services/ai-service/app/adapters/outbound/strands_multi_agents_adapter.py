@@ -95,11 +95,6 @@ class SwarmLlmAdapter(LlmAnalyzerPort):
         self._swarm = swarm
 
     async def analyze(self, text: str) -> AnalysisResult:
-        if not self._client:
-            raise LlmNotConfiguredError(
-                "AI service not configured. Set OPENAI_API_KEY."
-            )
-
         async def _call() -> AnalysisResult:
             response = await self._swarm.invoke_async(f"Analyze this architecture diagram:\n{text}")
             content = response.result or ""

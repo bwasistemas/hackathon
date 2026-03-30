@@ -13,7 +13,6 @@ from app.adapters.inbound.rabbitmq_consumer import (
 from app.adapters.outbound.asyncpg_uploads import create_upload_repository
 from app.adapters.outbound.strands_multi_agents_adapter import SwarmLlmAdapter, build_multi_agents
 from app.adapters.outbound.minio_storage import MinIOStorage
-from app.adapters.outbound.openai_adapter import OpenAiLlmAdapter, build_openai_client
 from app.adapters.outbound.tesseract_ocr import TesseractTextExtractor
 from app.application.analyze_diagram import AnalyzeDiagramUseCase
 from app.application.process_diagram_upload import ProcessDiagramUploadUseCase
