@@ -73,11 +73,19 @@ services:
       - RABBITMQ_PORT=5672
       - RABBITMQ_USER=${RABBITMQ_USER:-fiap}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-fiap}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-fiap}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-fiap1234}
+      - MINIO_BUCKET=${MINIO_BUCKET:-fiap}
+      - MINIO_REGION=${MINIO_REGION:-us-east-1}
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
       - SERVICE_NAME=upload-service
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     volumes:
       - uploads_data:/app/uploads
@@ -103,18 +111,26 @@ services:
       - RABBITMQ_PORT=5672
       - RABBITMQ_USER=${RABBITMQ_USER:-fiap}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-fiap}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-fiap}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-fiap1234}
+      - MINIO_BUCKET=${MINIO_BUCKET:-fiap}
+      - MINIO_REGION=${MINIO_REGION:-us-east-1}
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
       - SERVICE_NAME=ai-service
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
     env_file:
-      - ../.env
+      - .env
     volumes:
       - uploads_data:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     networks:
       - arch-network
@@ -136,7 +152,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}
       - SERVICE_NAME=report-service
     env_file:
-      - ../.env
+      - .env
     depends_on:
       postgres:
         condition: service_healthy
@@ -195,7 +211,7 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-fiap}
       - GF_USERS_ALLOW_SIGN_UP=false
     env_file:
-      - ../.env
+      - .env
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

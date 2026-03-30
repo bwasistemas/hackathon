@@ -12,3 +12,5 @@ asyncpg
 aiohttp
 pdf2image
 prometheus-fastapi-instrumentator==7.0.0
+aiobotocore
+botocore

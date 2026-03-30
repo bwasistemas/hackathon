@@ -11,6 +11,7 @@ from app.adapters.inbound.rabbitmq_consumer import (
     start_diagram_upload_consumer,
 )
 from app.adapters.outbound.asyncpg_uploads import create_upload_repository
+from app.adapters.outbound.minio_storage import MinIOStorage
 from app.adapters.outbound.openai_adapter import OpenAiLlmAdapter, build_openai_client
 from app.adapters.outbound.tesseract_ocr import TesseractTextExtractor
 from app.application.analyze_diagram import AnalyzeDiagramUseCase
@@ -32,9 +33,10 @@ def create_app() -> FastAPI:
         )
         llm = OpenAiLlmAdapter(openai_client, settings.llm_model)
         ocr = TesseractTextExtractor()
+        storage = MinIOStorage(settings)
 
         app.state.analyze_use_case = AnalyzeDiagramUseCase(llm)
-        process_upload = ProcessDiagramUploadUseCase(ocr, llm, upload_repo)
+        process_upload = ProcessDiagramUploadUseCase(ocr, llm, upload_repo, storage)
 
         rabbit = await connect_rabbitmq(
             settings.rabbitmq_host,
