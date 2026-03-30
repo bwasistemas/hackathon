@@ -6,27 +6,33 @@ Sistema de análise automatizada de diagramas de arquitetura de software para ha
 
 ``` text
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   Frontend       │────▶│  Upload Service  │────▶│    RabbitMQ     │
+│   Frontend      │────▶│  Upload Service  │────▶│    RabbitMQ     │
 │  (Nginx/SPA)    │     │   (FastAPI)      │     │   (Message Q)   │
 │   :8051         │     │   :8001          │     │   :5672/:15672  │
-└─────────────────┘     └──────────────────┘     └────────┬────────┘
-                                                         │
-           ┌─────────────────────────────────────────────┘
-           │
-           ▼
-┌──────────────────┐          ┌──────────────────┐        ┌─────────────────┐
-│   AI Service     │          │   PostgreSQL     │        │     MinIO       │
-│   (LLM + OCR)    │─────────▶│   :5432          │        │  :9000/:9001    │
-│   :8003          │          └──────────────────┘        └─────────────────┘
-└──────────────────┘                 ▲
-           │                         │
-           └─────────────────────────┘
-                                     │
-┌──────────────────┐          ┌──────────────────┐
-│  Report Service  │◀─────────│   Prometheus     │
-│   (FastAPI)      │          │   + Grafana      │
-│   :8004          │          │   :9090/:3000    │
-└──────────────────┘          └──────────────────┘
+└─────────────────┘     └───────┬──────────┘     └────────┬────────┘
+                                │                         │
+                                │ store file              │ notify
+                                ▼                         ▼
+                        ┌─────────────────┐     ┌──────────────────┐
+                        │     MinIO       │◀────│   AI Service     │
+                        │  (Object Store) │     │   (LLM + OCR)    │
+                        │  :9000/:9001    │     │   :8003          │
+                        └─────────────────┘     └───────┬──────────┘
+                                                        │
+                                                        │ persist result
+                                                        ▼
+┌──────────────────┐                          ┌──────────────────┐
+│  Report Service  │◀─────────────────────────│   PostgreSQL     │
+│   (FastAPI)      │                          │   :5432          │
+│   :8004          │                          └──────────────────┘
+└──────────────────┘
+        ▲
+        │
+┌──────────────────┐
+│  Prometheus      │
+│  + Grafana       │
+│  :9090/:3000     │
+└──────────────────┘
 ```
 
 ## Quick Start
@@ -293,18 +299,20 @@ docker-compose logs frontend
 
 MIT - Hackathon FIAP 2026
 
-Resumo:
-1. Upload Service (Porta 8001)
-É a Esteira de Entrada. Quando você seleciona o seu PDF e clica em Enviar, ele salva o seu arquivo numa pasta, vai no Banco de Dados (Postgres) e anota: "O Bruno enviou o arquivo X. Status = RECEIVED". Imediatamente, ele envia um "Bipe" pra fila do RabbitMQ avisando: "Tem diagrama novo na área". E o trabalho dele acaba aí.
+## Como funciona o fluxo completo
 
-2. AI Service (Porta 8003) - O Cérebro da Operação
-Esse é o verdadeiro cara que GERA o relatório. Ele fica invisível no background ouvindo a fila do RabbitMQ o tempo todo:
+### 1. Upload Service (Porta 8001)
+É a esteira de entrada. Quando você seleciona um PDF/imagem e clica em Enviar:
+- Faz o upload do arquivo direto para o **MinIO** (Object Storage S3-compatible)
+- Registra no PostgreSQL: `status = RECEIVED` e salva a URL do MinIO (`minio_url`)
+- Publica uma mensagem no **RabbitMQ** avisando que tem diagrama novo para processar
 
-Quando o RabbitMQ apita, o AI Service acorda, puxa o seu PDF da pasta e roda a lib Poppler + Tesseract (OCR) em Multithreading para extrair o conteúdo gigante em texto.
-Depois ele pega o texto, conecta lá na nuvem do OpenRouter, joga para a LLM (DeepSeek Vision) e pede análise de Risco e Componentes.
-O DeepSeek devolve o veredito em formato JSON e aí o AI Service vai lá na mesma tabela do Banco de Dados e diz: "Muda o Status pra DONE, e salva esse texto brutal que a IA me devolveu na coluna file_path".
+### 2. AI Service (Porta 8003)
+O cérebro da operação. Fica em background consumindo a fila do RabbitMQ:
+- Ao receber uma mensagem, **baixa o arquivo direto do MinIO** via `minio_url`
+- Roda OCR com Poppler + Tesseract (multithreading) para extrair o texto do PDF/imagem
+- Envia o conteúdo para a LLM (DeepSeek via OpenRouter) pedindo análise de componentes e riscos
+- Persiste o resultado em JSON no PostgreSQL e atualiza o status para `DONE`
 
-3. Report Service (Porta 8004)
-É a Estante de Leitura (que tem o Swagger ali no seu link!). Ele não processa IA, ele NUNCA aciona a API do DeepSeek nem lê PDF. A única coisa que ele faz é ir no Banco de Dados (Postgres), consultar tudo que está com as tags PROCESSING ou DONE e devolver mastigadinho em um Array JSON para o Frontend colocar bonitinho no seu Dashboard.
-
-Resumindo: Você enviou para o Upload Service, o AI Service suou a camisa gerando e lendo a IA demoradamente no "background", e o Report Service só serviu de "garçom" para trazer as Análises já prontas e salvas do banco de dados pra sua tela do Dashboard! Tudo em frações de segundos desacopladas!
+### 3. Report Service (Porta 8004)
+O garçom. Não processa IA nem acessa o MinIO. Apenas consulta o PostgreSQL e devolve as análises prontas em JSON para o Frontend exibir no Dashboard.
