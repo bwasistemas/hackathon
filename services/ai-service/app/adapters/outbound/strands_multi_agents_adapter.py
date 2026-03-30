@@ -1,5 +1,4 @@
 """OpenAI SDK adapter implementing LlmAnalyzerPort."""
-import asyncio
 import json
 from typing import Optional
 import logging
@@ -99,10 +98,11 @@ class SwarmLlmAdapter(LlmAnalyzerPort):
             response = await self._swarm.invoke_async(f"Analyze this architecture diagram:\n{text}")
             content = response.result or ""
             json_content = build_report_agent(content)
+            print("AQUI PORRA", response.json_content)
             return _parse_llm_json(json_content)
 
         try:
-            return await asyncio.to_thread(_call)
+            return await _call()
         except LlmNotConfiguredError:
             raise
         except Exception as e:

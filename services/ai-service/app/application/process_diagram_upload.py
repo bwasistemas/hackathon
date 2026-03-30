@@ -39,8 +39,10 @@ class ProcessDiagramUploadUseCase:
 
             try:
                 result = await self._llm.analyze(text)
+                print("===== AQUI OW ====", result)
                 ai_result = _analysis_to_storage_dict(result)
             except Exception as e:
+                print("==== oi =====", result)
                 ai_result = {"error": str(e)}
 
             payload = json.dumps({"text": text, "ai": ai_result})

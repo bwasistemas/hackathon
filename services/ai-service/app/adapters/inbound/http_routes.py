@@ -31,24 +31,32 @@ def build_router() -> APIRouter:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e)) from e
 
-        return AnalysisResponse(
-            components=[
-                ComponentSchema(
-                    name=c.name,
-                    type=c.component_type,
-                    description=c.description,
-                )
-                for c in result.components
-            ],
-            risks=[
-                RiskSchema(
-                    severity=r.severity,
-                    description=r.description,
-                    recommendation=r.recommendation,
-                )
-                for r in result.risks
-            ],
-            summary=result.summary,
-        )
+        try:
+            print('============= ANTES ========', result)
+            return AnalysisResponse(
+                components=[
+                    ComponentSchema(
+                        name=c.name,
+                        type=c.component_type,
+                        description=c.description,
+                    )
+                    for c in result.components
+                ],
+                risks=[
+                    RiskSchema(
+                        severity=r.severity,
+                        description=r.description,
+                        recommendation=r.recommendation,
+                    )
+                    for r in result.risks
+                ],
+                summary=result.summary,
+            )
 
+
+        except Exception as e:
+            print("================================ C =========", e)
+            print("================================ C =========", result)
+            raise HTTPException(status_code=500, detail=str(result)) from e
+    
     return router
