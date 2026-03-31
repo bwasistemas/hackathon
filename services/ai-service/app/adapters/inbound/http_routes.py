@@ -32,7 +32,6 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=500, detail=str(e)) from e
 
         try:
-            print('============= ANTES ========', result)
             return AnalysisResponse(
                 components=[
                     ComponentSchema(
@@ -55,8 +54,6 @@ def build_router() -> APIRouter:
 
 
         except Exception as e:
-            print("================================ C =========", e)
-            print("================================ C =========", result)
             raise HTTPException(status_code=500, detail=str(result)) from e
     
     return router

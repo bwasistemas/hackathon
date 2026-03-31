@@ -1,17 +1,16 @@
 """OpenAI SDK adapter implementing LlmAnalyzerPort."""
-import json
 from typing import Optional
 import logging
-import os
 from strands import Agent
 from strands.multiagent import Swarm
 from strands.models.openai import OpenAIModel
-from strands_tools import calculator
 
 from app.config import load_settings
 from app.application.ports import LlmAnalyzerPort
 from app.domain.exceptions import LlmAnalysisError, LlmNotConfiguredError
-from app.domain.models import AnalysisResult, Component, Risk
+from app.domain.models import AnalysisResult
+
+from app.adapters.outbound.llm_json_parser import parse_analysis_json
 
 settings = load_settings()
 logger = logging.getLogger(__name__)
@@ -85,20 +84,62 @@ def build_report_agent(result:str):
     ])
 
     # Continue the conversation
-    return agent(result)
+    return _agent_output_to_str(agent(result))
+
+def _text_from_message(message) -> str:
+    """Normalize Strands message dict/object to plain text for model input."""
+    if message is None:
+        return ""
+    if isinstance(message, str):
+        return message
+    if isinstance(message, dict):
+        blocks = message.get("content") or []
+        parts: list[str] = []
+        for block in blocks:
+            if isinstance(block, dict) and "text" in block:
+                parts.append(str(block["text"]))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "\n".join(parts)
+    content = getattr(message, "content", None)
+    if content is None:
+        return str(message)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return _text_from_message({"role": "assistant", "content": content})
+    return str(content)
+
+def _agent_output_to_str(result) -> str:
+    """Agent() may return str or AgentResult with a message payload."""
+    if isinstance(result, str):
+        return result
+    msg = getattr(result, "message", None)
+    if msg is not None:
+        return _text_from_message(msg)
+    return str(result)
 
 def final_swarm_text(swarm_result) -> str:
+    """Last node's assistant text. Avoid next() on empty dict — raises StopIteration, which breaks async callers."""
+    results = getattr(swarm_result, "results", None) or {}
     history = getattr(swarm_result, "node_history", None) or []
+    if not results:
+        return ""
     if not history:
-        # fallback: any node (e.g. last key order — not ideal)
-        last_key = next(reversed(swarm_result.results.keys()))
-        node_result = swarm_result.results[last_key]
+        keys = list(results.keys())
+        last_key = keys[-1]
+        node_result = results[last_key]
     else:
         last_id = history[-1].node_id
-        node_result = swarm_result.results[last_id]
+        node_result = results.get(last_id)
+        if node_result is None:
+            keys = list(results.keys())
+            node_result = results[keys[-1]] if keys else None
+    if node_result is None:
+        return ""
 
     agent_result = node_result.result
-    return agent_result.message
+    return _text_from_message(getattr(agent_result, "message", None))
 
 class SwarmLlmAdapter(LlmAnalyzerPort):
     def __init__(
@@ -115,7 +156,7 @@ class SwarmLlmAdapter(LlmAnalyzerPort):
             # logger.error("Swarm raw response (repr): %r", final_swarm_text(response))
             json_content = build_report_agent(content)
             # logger.error("JSON raw response (repr): %r", json_content.result)
-            return _parse_llm_json(json_content)
+            return parse_analysis_json(json_content)
 
         try:
             return await _call()
@@ -123,31 +164,3 @@ class SwarmLlmAdapter(LlmAnalyzerPort):
             raise
         except Exception as e:
             raise LlmAnalysisError(str(e)) from e
-
-def _parse_llm_json(content: str) -> AnalysisResult:
-    try:
-        parsed = json.loads(content)
-        components = [
-            Component(
-                name=c.get("name", ""),
-                component_type=c.get("type", ""),
-                description=c.get("description", ""),
-            )
-            for c in parsed.get("components", [])
-        ]
-        risks = [
-            Risk(
-                severity=r.get("severity", ""),
-                description=r.get("description", ""),
-                recommendation=r.get("recommendation", ""),
-            )
-            for r in parsed.get("risks", [])
-        ]
-        summary = parsed.get("summary", content)
-        return AnalysisResult(components=components, risks=risks, summary=summary)
-    except json.JSONDecodeError:
-        return AnalysisResult(
-            components=[],
-            risks=[],
-            summary="Error parsing AI response: " + content,
-        )
