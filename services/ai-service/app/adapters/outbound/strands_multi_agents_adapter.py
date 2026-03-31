@@ -14,8 +14,9 @@ from app.domain.exceptions import LlmAnalysisError, LlmNotConfiguredError
 from app.domain.models import AnalysisResult, Component, Risk
 
 settings = load_settings()
+logger = logging.getLogger(__name__)
 
-def build_strands_client(api_key: str, base_url: str, model_id: str = "gpt-4o", max_tokens:int = 1000, temperature: float = 0.7) -> Optional[OpenAIModel]:
+def build_strands_client(api_key: str, base_url: str, model_id: str = "deepseek/deepseek-v3.2", max_tokens:int = 1000, temperature: float = 0.7) -> Optional[OpenAIModel]:
     if not api_key:
         return None
     try:
@@ -40,11 +41,11 @@ def build_multi_agents():
         base_url = settings.openai_base_url, 
     )
 
-    # Create specialized agents
+    # Create a specialized agents
     architect = Agent(name="architect", system_prompt="You are a software architect review specialist...", model=openAIModel)
     infrastructure = Agent(name="infrastructure", system_prompt="You are a infrastructure review specialist...", model=openAIModel)
     developer = Agent(name="developer", system_prompt="You are a developer review specialist...", model=openAIModel)
-    staff_architect = Agent(name="staff_architect", system_prompt="You are a software staff architect review specialist...", model=openAIModel)
+    staff_architect = Agent(name="staff_architect", system_prompt="You are software staff architect review specialist...", model=openAIModel)
     
     # Create a swarm with these agents, starting with the researcher
     return Swarm(
@@ -86,6 +87,19 @@ def build_report_agent(result:str):
     # Continue the conversation
     return agent(result)
 
+def final_swarm_text(swarm_result) -> str:
+    history = getattr(swarm_result, "node_history", None) or []
+    if not history:
+        # fallback: any node (e.g. last key order — not ideal)
+        last_key = next(reversed(swarm_result.results.keys()))
+        node_result = swarm_result.results[last_key]
+    else:
+        last_id = history[-1].node_id
+        node_result = swarm_result.results[last_id]
+
+    agent_result = node_result.result
+    return agent_result.message
+
 class SwarmLlmAdapter(LlmAnalyzerPort):
     def __init__(
         self,
@@ -96,9 +110,11 @@ class SwarmLlmAdapter(LlmAnalyzerPort):
     async def analyze(self, text: str) -> AnalysisResult:
         async def _call() -> AnalysisResult:
             response = await self._swarm.invoke_async(f"Analyze this architecture diagram:\n{text}")
-            content = response.result or ""
+            content = final_swarm_text(response)
+            # Use module logger so uvicorn/docker logs show INFO (root logger may be quiet).
+            # logger.error("Swarm raw response (repr): %r", final_swarm_text(response))
             json_content = build_report_agent(content)
-            print("AQUI PORRA", response.json_content)
+            # logger.error("JSON raw response (repr): %r", json_content.result)
             return _parse_llm_json(json_content)
 
         try:
