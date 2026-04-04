@@ -19,13 +19,19 @@ class Settings:
     minio_bucket: str
     minio_region: str
     minio_use_ssl: bool
+    max_handoffs: int
+    max_iterations: int
+    execution_timeout: float
+    node_timeout: float
+    repetitive_handoff_detection_window: int
+    repetitive_handoff_min_unique_agents: int
 
 
 def load_settings() -> Settings:
     return Settings(
         openai_api_key=os.getenv("OPENAI_API_KEY", ""),
         openai_base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-        llm_model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+        llm_model=os.getenv("LLM_MODEL", "deepseek/deepseek-v3.2"),
         database_url=os.getenv(
             "DATABASE_URL",
             "postgresql+asyncpg://fiap:fiap@postgres:5432/fiap",
@@ -40,4 +46,10 @@ def load_settings() -> Settings:
         minio_bucket=os.getenv("MINIO_BUCKET", "fiap"),
         minio_region=os.getenv("MINIO_REGION", "us-east-1"),
         minio_use_ssl=os.getenv("MINIO_USE_SSL", "false").lower() == "true",
+        max_handoffs=int(os.getenv("MAX_HANDOFFS", "20")),
+        max_iterations=int(os.getenv("MAX_ITERATIONS", "20")),
+        execution_timeout=float(os.getenv("EXECUTION_TIMEOUT", "60.0")),
+        node_timeout=float(os.getenv("NODE_TIMEOUT", "30.0")),
+        repetitive_handoff_detection_window=int(os.getenv("REPETITIVE_HANDOFF_DETECTION_WINDOW", "8")),
+        repetitive_handoff_min_unique_agents=int(os.getenv("REPETITIVE_HANDOFF_MIN_UNIQUE_AGENTS", "3")),
     )

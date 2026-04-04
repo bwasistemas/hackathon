@@ -1,13 +1,14 @@
 """OpenAI SDK adapter implementing LlmAnalyzerPort."""
 import asyncio
-import json
 from typing import Optional
 
 from openai import OpenAI
 
 from app.application.ports import LlmAnalyzerPort
 from app.domain.exceptions import LlmAnalysisError, LlmNotConfiguredError
-from app.domain.models import AnalysisResult, Component, Risk
+from app.domain.models import AnalysisResult
+
+from app.adapters.outbound.llm_json_parser import parse_analysis_json
 
 SYSTEM_PROMPT = """You are an expert software architect analyzing architecture diagrams.
 Given the extracted text from a diagram, identify:
@@ -68,7 +69,7 @@ class OpenAiLlmAdapter(LlmAnalyzerPort):
                 response_format={"type": "json_object"},
             )
             content = response.choices[0].message.content or ""
-            return _parse_llm_json(content)
+            return parse_analysis_json(content)
 
         try:
             return await asyncio.to_thread(_call)
@@ -76,32 +77,3 @@ class OpenAiLlmAdapter(LlmAnalyzerPort):
             raise
         except Exception as e:
             raise LlmAnalysisError(str(e)) from e
-
-
-def _parse_llm_json(content: str) -> AnalysisResult:
-    try:
-        parsed = json.loads(content)
-        components = [
-            Component(
-                name=c.get("name", ""),
-                component_type=c.get("type", ""),
-                description=c.get("description", ""),
-            )
-            for c in parsed.get("components", [])
-        ]
-        risks = [
-            Risk(
-                severity=r.get("severity", ""),
-                description=r.get("description", ""),
-                recommendation=r.get("recommendation", ""),
-            )
-            for r in parsed.get("risks", [])
-        ]
-        summary = parsed.get("summary", content)
-        return AnalysisResult(components=components, risks=risks, summary=summary)
-    except json.JSONDecodeError:
-        return AnalysisResult(
-            components=[],
-            risks=[],
-            summary="Error parsing AI response: " + content,
-        )
