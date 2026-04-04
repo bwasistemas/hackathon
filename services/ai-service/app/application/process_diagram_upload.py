@@ -36,9 +36,10 @@ class ProcessDiagramUploadUseCase:
                 print(f"Downloaded from MinIO: {file_path} -> {local_file_path}")
             
             text = await self._ocr.extract_text(local_file_path)
+            source_hint = _build_source_hint(local_file_path)
 
             try:
-                result = await self._llm.analyze(text)
+                result = await self._llm.analyze(text, source_hint=source_hint)
                 ai_result = _analysis_to_storage_dict(result)
             except Exception as e:
                 ai_result = {"error": str(e)}
@@ -53,6 +54,15 @@ class ProcessDiagramUploadUseCase:
                     os.unlink(temp_file_to_cleanup)
                 except Exception as e:
                     print(f"Failed to cleanup temp file {temp_file_to_cleanup}: {e}")
+
+
+def _build_source_hint(file_path: str) -> str:
+    path_lower = file_path.lower()
+    if path_lower.endswith(".pdf"):
+        return "PDF with architecture diagram pages"
+    if path_lower.endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".webp")):
+        return "Image file containing an architecture diagram"
+    return f"File path or source: {file_path}"
 
 
 def _analysis_to_storage_dict(result: AnalysisResult) -> dict:

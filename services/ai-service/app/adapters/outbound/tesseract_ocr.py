@@ -26,8 +26,11 @@ async def _extract_from_pdf(file_path: str) -> str:
         extracted = await asyncio.to_thread(pytesseract.image_to_string, img)
         if extracted:
             text_chunks.append(extracted.strip())
-    text = "\n".join(text_chunks)
-    return text.strip() if text else "No text found in PDF"
+
+    text = "\n".join(text_chunks).strip()
+    header = f"[PDF Diagram: {len(images)} page(s)]\n\n"
+    body = text if text else "No text found in PDF image(s). Use the diagram visual content and labels to infer architecture."
+    return f"{header}{body}"
 
 
 async def _extract_from_image(file_path: str) -> str:
@@ -36,4 +39,5 @@ async def _extract_from_image(file_path: str) -> str:
 
     img = await asyncio.to_thread(Image.open, file_path)
     extracted_text = await asyncio.to_thread(pytesseract.image_to_string, img)
-    return extracted_text.strip() if extracted_text else "No text found in image"
+    body = extracted_text.strip() if extracted_text else "No text found in image. Use the diagram visual content and labels to infer architecture."
+    return f"[Image Diagram]\n\n{body}"

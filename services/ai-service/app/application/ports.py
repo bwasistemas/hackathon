@@ -5,7 +5,7 @@ from app.domain.models import AnalysisResult
 
 
 class LlmAnalyzerPort(Protocol):
-    async def analyze(self, text: str) -> AnalysisResult:
+    async def analyze(self, text: str, source_hint: str | None = None) -> AnalysisResult:
         ...
 
 
