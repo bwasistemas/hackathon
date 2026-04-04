@@ -48,20 +48,27 @@ class OpenAiLlmAdapter(LlmAnalyzerPort):
         self._client = client
         self._model = model
 
-    async def analyze(self, text: str) -> AnalysisResult:
+    async def analyze(self, text: str, source_hint: str | None = None) -> AnalysisResult:
         if not self._client:
             raise LlmNotConfiguredError(
                 "AI service not configured. Set OPENAI_API_KEY."
             )
 
         def _call() -> AnalysisResult:
+            prompt = [
+                "Analyze this architecture diagram from OCR output.",
+                "The text may come from a PDF or image diagram.",
+            ]
+            if source_hint:
+                prompt.append(f"Source hint: {source_hint}.")
+            prompt.append(text)
             response = self._client.chat.completions.create(
                 model=self._model,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {
                         "role": "user",
-                        "content": f"Analyze this architecture diagram:\n{text}",
+                        "content": "\n".join(prompt),
                     },
                 ],
                 temperature=0.3,

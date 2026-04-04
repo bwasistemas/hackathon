@@ -56,17 +56,26 @@ def build_multi_agents() -> Swarm:
     # Create specialized agents
     architect = Agent(
         name="architect",
-        system_prompt="You are a software architect review specialist...",
+        system_prompt=(
+            "You are a software architect review specialist. You receive OCR text extracted from architecture diagrams "
+            "in image or PDF form. Analyze diagram structure, identify components/services, detect risks, and explain the architecture in detail."
+        ),
         model=openai_model
     )
     infrastructure = Agent(
         name="infrastructure",
-        system_prompt="You are a infrastructure review specialist...",
+        system_prompt=(
+            "You are an infrastructure review specialist. You receive OCR text extracted from architecture diagrams "
+            "inside images or PDFs. Focus on infrastructure components, data flow, and deployment concerns."
+        ),
         model=openai_model
     )
     developer = Agent(
         name="developer",
-        system_prompt="You are a developer review specialist...",
+        system_prompt=(
+            "You are a developer review specialist. You receive OCR text extracted from architecture diagrams "
+            "from images or PDFs. Explain the developer-facing architecture, integrations, and important implementation details."
+        ),
         model=openai_model
     )
 
@@ -178,10 +187,20 @@ class SwarmLlmAdapter(LlmAnalyzerPort):
     def __init__(self, swarm: Swarm) -> None:
         self._swarm = swarm
 
-    async def analyze(self, text: str) -> AnalysisResult:
+    async def analyze(self, text: str, source_hint: str | None = None) -> AnalysisResult:
         """Analyze the given text using the swarm and generate a report."""
+
+        prompt_parts = [
+            "Analyze this architecture diagram from OCR output.",
+            "The text may come from a PDF or image diagram.",
+        ]
+        if source_hint:
+            prompt_parts.append(f"Source hint: {source_hint}.")
+        prompt_parts.append(text)
+        prompt = "\n".join(prompt_parts)
+
         async def _call() -> AnalysisResult:
-            response = await self._swarm.invoke_async(f"Analyze this architecture diagram:\n{text}")
+            response = await self._swarm.invoke_async(prompt)
             # Pass the full swarm result to build_report_agent for history analysis
             json_content = build_report_agent(response)
             return parse_analysis_json(json_content)

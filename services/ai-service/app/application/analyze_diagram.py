@@ -7,5 +7,5 @@ class AnalyzeDiagramUseCase:
     def __init__(self, llm: LlmAnalyzerPort) -> None:
         self._llm = llm
 
-    async def execute(self, text: str) -> AnalysisResult:
-        return await self._llm.analyze(text)
+    async def execute(self, text: str, source_hint: str | None = None) -> AnalysisResult:
+        return await self._llm.analyze(text, source_hint=source_hint)
