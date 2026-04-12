@@ -19,8 +19,8 @@
 ## Upload de arquivos
 
 ## Serviço de AI
-- [ ] Usar langgraph ou [sdk da aws](https://strandsagents.com/docs/user-guide/concepts/multi-agent/swarm/)
-- [ ] Utilizar multi agentes com o [sdk da aws](https://strandsagents.com/docs/user-guide/concepts/multi-agent/swarm/) ou [langgraph aws](https://reference.langchain.com/python/langgraph-swarm)
+- [X] Usar langgraph ou [sdk da aws](https://strandsagents.com/docs/user-guide/concepts/multi-agent/swarm/)
+- [X] Utilizar multi agentes com o [sdk da aws](https://strandsagents.com/docs/user-guide/concepts/multi-agent/swarm/) ou [langgraph aws](https://reference.langchain.com/python/langgraph-swarm)
 - [ ] Usar baratinha para fazer OCR e um modelo mais robusto para analisar e gerar a sugestão da arquitetura
 - [ ] Criar RAG de livros sobre arquitetura para o modelo consultar (?)
 - [ ] Adicionar guardrails
