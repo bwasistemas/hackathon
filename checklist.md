@@ -23,9 +23,9 @@
 - [X] Utilizar multi agentes com o [sdk da aws](https://strandsagents.com/docs/user-guide/concepts/multi-agent/swarm/) ou [langgraph aws](https://reference.langchain.com/python/langgraph-swarm)
 - [X] Usar baratinha para fazer OCR e um modelo mais robusto para analisar e gerar a sugestão da arquitetura
 - [ ] Refinar prompts da aplicação
-- [ ] Criar RAG de livros sobre arquitetura para o modelo consultar (?)
 - [ ] Adicionar guardrails
 - [ ] Aplicar técnicas de alucinação
+- [ ] Criar RAG de livros sobre arquitetura para o modelo consultar (?)
 - [ ] Criar relatório com os seguintes pontos: Justificativa da abordagem escolhida;  Demonstração prática da análise; Discussão de limitações do modelo; Como a IA é acionada; Como o sistema trata falhas da IA; Como o resultado da IA é persistido; Como o relatório é gerado a partir da análise;
 
 ## Segurança
