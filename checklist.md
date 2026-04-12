@@ -9,19 +9,19 @@
 
 - [x] Desenhar a arquitetura do sistema
 - [x] Definir arquitetura de cada microsserviço (clean ou hexagonal)
-- [ ] Revisar arquitetura para analisar a necessidade de novos microsserviços
-- [ ] Revisar comunicação entre o serviço de AI com a postgres, cada microsserviço deve ter sem BD próprio. Uma sugestão é publicar a mensagem no rabbit com o payload do que deve ser tratado, para evitar a comunicação do serviço de AI com o postgres e manter a separação
+- [x] Revisar arquitetura para analisar a necessidade de novos microsserviços
+- [x] Revisar comunicação entre o serviço de AI com a postgres, cada microsserviço deve ter sem BD próprio. Uma sugestão é publicar a mensagem no rabbit com o payload do que deve ser tratado, para evitar a comunicação do serviço de AI com o postgres e manter a separação
 - [X] Subir ambiente do minio para integrar nos serviços
 - [X] Atualizar código para  usar o blob storage, para armazenar os arquivos dos diagramas enviados. 
 - [ ] Criar testes automatizados (unitários)
-- [ ] Analisar a necessidade de utilizar um API gateway
+- [ ] Analisar a necessidade de utilizar um API gateway 
 
 ## Upload de arquivos
 
 ## Serviço de AI
 - [X] Usar langgraph ou [sdk da aws](https://strandsagents.com/docs/user-guide/concepts/multi-agent/swarm/)
 - [X] Utilizar multi agentes com o [sdk da aws](https://strandsagents.com/docs/user-guide/concepts/multi-agent/swarm/) ou [langgraph aws](https://reference.langchain.com/python/langgraph-swarm)
-- [ ] Usar baratinha para fazer OCR e um modelo mais robusto para analisar e gerar a sugestão da arquitetura
+- [X] Usar baratinha para fazer OCR e um modelo mais robusto para analisar e gerar a sugestão da arquitetura
 - [ ] Criar RAG de livros sobre arquitetura para o modelo consultar (?)
 - [ ] Adicionar guardrails
 - [ ] Aplicar técnicas de alucinação
