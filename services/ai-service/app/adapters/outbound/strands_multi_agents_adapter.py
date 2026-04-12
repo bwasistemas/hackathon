@@ -1,10 +1,10 @@
 """OpenAI SDK adapter implementing LlmAnalyzerPort."""
-from typing import Optional
 import logging
+
 from strands import Agent
 from strands.multiagent import Swarm
-from strands.models.openai import OpenAIModel
 
+from app.adapters.outbound.helpers.llm import build_llm_client
 from app.config import load_settings
 from app.application.ports import LlmAnalyzerPort
 from app.domain.exceptions import LlmAnalysisError, LlmNotConfiguredError
@@ -16,39 +16,9 @@ settings = load_settings()
 logger = logging.getLogger(__name__)
 
 
-def build_strands_client(
-    api_key: str,
-    base_url: str,
-    model_id: str = settings.llm_model,
-    max_tokens: int = 1000,
-    temperature: float = 0.7,
-    response_format: dict = None
-) -> Optional[OpenAIModel]:
-    """Build and return an OpenAI model client for Strands."""
-    if not api_key:
-        return None
-    try:
-        params = {
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-        }
-        if response_format:
-            params["response_format"] = response_format
-        return OpenAIModel(
-            client_args={
-                "api_key": api_key,
-                "base_url": base_url,
-            },
-            model_id=model_id,
-            params=params
-        )
-    except TypeError:
-        return None
-
-
 def build_multi_agents() -> Swarm:
     """Build and return a Swarm with specialized agents for architecture analysis."""
-    openai_model = build_strands_client(
+    openai_model = build_llm_client(
         api_key=settings.openai_api_key,
         base_url=settings.openai_base_url,
     )
@@ -112,12 +82,12 @@ def extract_conversation_history(swarm_result) -> str:
 
 def build_report_agent(swarm_result) -> str:
     """Build a report agent that analyzes the full conversation history and generates a JSON report."""
-    openai_model = build_strands_client(
+    openai_model = build_llm_client(
         api_key=settings.openai_api_key,
         base_url=settings.openai_base_url,
         temperature=0.1,
         max_tokens=4000,  # Increased for longer history
-        response_format={"type": "json_object"}
+        response_format={"type": "json_object"},
     )
 
     system_prompt = """You are a software architect expert on architecture diagrams.

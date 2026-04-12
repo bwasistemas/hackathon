@@ -29,14 +29,14 @@ class ProcessDiagramUploadUseCase:
 
         local_file_path = file_path
         temp_file_to_cleanup = None
-        
+
         try:
             # If file is in MinIO, download it first
             if file_path.startswith("minio://") and self._storage:
                 local_file_path = await self._storage.download_file(file_path)
                 temp_file_to_cleanup = local_file_path
                 print(f"Downloaded from MinIO: {file_path} -> {local_file_path}")
-            
+
             text = await self._ocr.analyze_diagram(local_file_path)
             source_hint = _build_source_hint(local_file_path)
 
@@ -48,7 +48,7 @@ class ProcessDiagramUploadUseCase:
 
             payload = json.dumps({"text": text, "ai": ai_result})
             await self._uploads.mark_done_with_payload(uid, payload)
-        
+
         finally:
             # Clean up temp file if we downloaded from MinIO
             if temp_file_to_cleanup and os.path.exists(temp_file_to_cleanup):
