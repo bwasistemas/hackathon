@@ -265,19 +265,6 @@ window.viewReport = async (id) => {
                 <h3 style="color:var(--brand-danger)"><i data-lucide="alert-triangle"></i> Riscos Arquiteturais</h3>
                 <div>${risksHtml || '<span style="color:#71717a">Nenhum</span>'}</div>
             </div>
-
-            <div class="feedback-box">
-                <h3>Avalie esta análise</h3>
-                <div class="rating-stars" id="star-rating">
-                    <i data-lucide="star" data-val="1"></i>
-                    <i data-lucide="star" data-val="2"></i>
-                    <i data-lucide="star" data-val="3"></i>
-                    <i data-lucide="star" data-val="4"></i>
-                    <i data-lucide="star" data-val="5"></i>
-                </div>
-                <textarea id="feedback-comment" placeholder="Deixe um comentário opcional sobre a precisão da IA..."></textarea>
-                <button class="btn btn-primary" onclick="submitFeedback('${id}')">Enviar Feedback</button>
-            </div>
         `;
         lucide.createIcons();
         initStars();
