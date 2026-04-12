@@ -6,12 +6,14 @@ from typing import Optional
 from app.application.ports import LlmAnalyzerPort, TextExtractionPort, UploadRepositoryPort
 from app.domain.models import AnalysisResult
 
+from app.adapters.outbound.llm_ocr import LlmOCRAdapter
+
 
 class ProcessDiagramUploadUseCase:
     """Use case: OCR → LLM analysis → persist upload result (RabbitMQ-driven flow)."""
     def __init__(
         self,
-        ocr: TextExtractionPort,
+        ocr: LlmOCRAdapter,
         llm: LlmAnalyzerPort,
         uploads: UploadRepositoryPort,
         storage: Optional[object] = None,
@@ -35,7 +37,7 @@ class ProcessDiagramUploadUseCase:
                 temp_file_to_cleanup = local_file_path
                 print(f"Downloaded from MinIO: {file_path} -> {local_file_path}")
             
-            text = await self._ocr.extract_text(local_file_path)
+            text = await self._ocr.analyze_diagram(local_file_path)
             source_hint = _build_source_hint(local_file_path)
 
             try:

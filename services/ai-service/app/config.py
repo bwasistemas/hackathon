@@ -8,6 +8,7 @@ class Settings:
     openai_api_key: str
     openai_base_url: str
     llm_model: str
+    llm_ocr: str
     database_url: str
     rabbitmq_host: str
     rabbitmq_port: int
@@ -32,6 +33,7 @@ def load_settings() -> Settings:
         openai_api_key=os.getenv("OPENAI_API_KEY", ""),
         openai_base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
         llm_model=os.getenv("LLM_MODEL", "deepseek/deepseek-v3.2"),
+        llm_ocr=os.getenv("LLM_OCR", "google/gemma-4-26b-a4b-it:free"),
         database_url=os.getenv(
             "DATABASE_URL",
             "postgresql+asyncpg://fiap:fiap@postgres:5432/fiap",
