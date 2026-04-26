@@ -24,6 +24,7 @@ SYSTEM_PROMPT = """
     - **Pattern Identification is Mandatory:** Identify the overarching architectural style.
     - **Accuracy:** Only describe what is visually present. Do not hallucinate external services not shown.
     - **Format:** Use the "Output Schema" provided below.
+    - **Language:**Always respond texts in Brazilian Portuguese.
 
     ## OUTPUT SCHEMA
     **Diagram Language:** [Identify Language]

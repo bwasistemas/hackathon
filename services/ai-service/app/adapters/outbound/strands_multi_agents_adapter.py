@@ -199,7 +199,7 @@ def build_report_agent(swarm_result) -> str:
     "summary": "detailed text explaining the diagram..."
     }
     Do not include analysis or any text outside of the JSON. Only format the output in the specified JSON.
-    Always respond in Brazilian Portuguese."""
+    Always respond texts in Brazilian Portuguese."""
 
     agent = Agent(
         model=openai_model,
