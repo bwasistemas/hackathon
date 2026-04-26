@@ -1,7 +1,10 @@
 """OpenAI SDK adapter implementing LlmAnalyzerPort."""
 import asyncio
+import math
+import re
 from typing import Optional
 
+import tiktoken
 from openai import OpenAI
 
 from app.application.ports import LlmAnalyzerPort
@@ -30,6 +33,49 @@ You MUST return the output strictly as a JSON object matching this exact structu
 Return a structured analysis in Portuguese."""
 
 
+class LlmInputSanitizer:
+    def __init__(self, model: str):
+        self.encoding = tiktoken.encoding_for_model(model)
+        self.MAX_TOKENS = 6000  # Leave buffer for response
+    
+    def sanitize_and_validate(self, text: str) -> str:
+        # 1. Remove potential injection markers
+        suspicious_patterns = [
+            r"(?i)(ignore.*instruction|forget.*prompt|override)",
+            r"(?i)(execute|run|eval|code)",
+        ]
+        sanitized = text
+        for pattern in suspicious_patterns:
+            sanitized = re.sub(pattern, "[REDACTED]", sanitized)
+        
+        # 2. Count tokens
+        tokens = self.encoding.encode(sanitized)
+        if len(tokens) > self.MAX_TOKENS:
+            raise ValueError(
+                f"Input too large: {len(tokens)} tokens > {self.MAX_TOKENS}"
+            )
+        
+        # 3. Enforce maximum entropy (detect randomness/gibberish)
+        entropy = self._calculate_entropy(sanitized)
+        if entropy > 5.5:  # High entropy = likely junk
+            raise ValueError("Input appears to be gibberish or random data")
+        
+        return sanitized
+    
+    @staticmethod
+    def _calculate_entropy(text: str) -> float:
+        from collections import Counter
+        if not text:
+            return 0
+        freq = Counter(text)
+        total = len(text)
+        entropy = 0
+        for count in freq.values():
+            p = count / total
+            entropy -= p * math.log2(p) if p > 0 else 0
+        return entropy
+
+
 def build_openai_client(api_key: str, base_url: str) -> Optional[OpenAI]:
     if not api_key:
         return None
@@ -47,12 +93,16 @@ class OpenAiLlmAdapter(LlmAnalyzerPort):
     ) -> None:
         self._client = client
         self._model = model
+        self._sanitizer = LlmInputSanitizer(model)
 
     async def analyze(self, text: str, source_hint: str | None = None) -> AnalysisResult:
         if not self._client:
             raise LlmNotConfiguredError(
                 "AI service not configured. Set OPENAI_API_KEY."
             )
+
+        # Sanitize input
+        sanitized_text = self._sanitizer.sanitize_and_validate(text)
 
         def _call() -> AnalysisResult:
             prompt = [
@@ -61,7 +111,7 @@ class OpenAiLlmAdapter(LlmAnalyzerPort):
             ]
             if source_hint:
                 prompt.append(f"Source hint: {source_hint}.")
-            prompt.append(text)
+            prompt.append(sanitized_text)
             response = self._client.chat.completions.create(
                 model=self._model,
                 messages=[

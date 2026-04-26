@@ -7,6 +7,8 @@ COPY requirements.txt .
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     poppler-utils \
+    libmagic1 \
+    libmagic-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies

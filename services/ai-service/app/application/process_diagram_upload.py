@@ -1,6 +1,7 @@
 """Use case: OCR → LLM analysis → persist upload result (RabbitMQ-driven flow)."""
 import json
 import os
+import magic
 from typing import Optional
 
 from app.application.ports import LlmAnalyzerPort, TextExtractionPort, UploadRepositoryPort
@@ -11,6 +12,9 @@ from app.adapters.outbound.llm_ocr import LlmOCRAdapter
 
 class ProcessDiagramUploadUseCase:
     """Use case: OCR → LLM analysis → persist upload result (RabbitMQ-driven flow)."""
+    ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp'}
+    MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+
     def __init__(
         self,
         ocr: LlmOCRAdapter,
@@ -37,6 +41,9 @@ class ProcessDiagramUploadUseCase:
                 temp_file_to_cleanup = local_file_path
                 print(f"Downloaded from MinIO: {file_path} -> {local_file_path}")
 
+            # Validate file
+            self._validate_file(local_file_path)
+
             text = await self._ocr.analyze_diagram(local_file_path)
             source_hint = _build_source_hint(local_file_path)
 
@@ -56,6 +63,22 @@ class ProcessDiagramUploadUseCase:
                     os.unlink(temp_file_to_cleanup)
                 except Exception as e:
                     print(f"Failed to cleanup temp file {temp_file_to_cleanup}: {e}")
+
+    def _validate_file(self, file_path: str) -> None:
+        # Validate extension
+        if not any(file_path.lower().endswith(ext) for ext in self.ALLOWED_EXTENSIONS):
+            raise ValueError(f"Unsupported file type. Allowed: {', '.join(self.ALLOWED_EXTENSIONS)}")
+        
+        # Validate size
+        if os.path.getsize(file_path) > self.MAX_FILE_SIZE:
+            raise ValueError(f"File too large: {os.path.getsize(file_path)} bytes > {self.MAX_FILE_SIZE}")
+        
+        # Validate MIME type
+        mime = magic.Magic(mime=True)
+        actual_mime = mime.from_file(file_path)
+        allowed_mimes = ['application/pdf', 'image/png', 'image/jpeg', 'image/bmp', 'image/gif', 'image/webp']
+        if actual_mime not in allowed_mimes:
+            raise ValueError(f"Invalid file type: {actual_mime}")
 
 
 def _build_source_hint(file_path: str) -> str:

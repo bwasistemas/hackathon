@@ -1,9 +1,16 @@
 """Composition root: wires adapters to use cases and builds the FastAPI application."""
+import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.adapters.inbound.http_routes import build_router
 from app.adapters.inbound.rabbitmq_consumer import (
@@ -17,6 +24,32 @@ from app.adapters.outbound.llm_ocr import LlmOCRAdapter
 from app.application.analyze_diagram import AnalyzeDiagramUseCase
 from app.application.process_diagram_upload import ProcessDiagramUploadUseCase
 from app.config import load_settings
+
+
+class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, max_size: int = 50_000_000):  # 50 MB
+        super().__init__(app)
+        self.max_size = max_size
+    
+    async def dispatch(self, request: Request, call_next):
+        if request.method not in ["POST", "PUT"]:
+            return await call_next(request)
+        
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > self.max_size:
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "Request body too large"}
+            )
+        return await call_next(request)
+
+
+def _rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded"}
+    )
+
 
 def create_app() -> FastAPI:
     settings = load_settings()
@@ -37,7 +70,7 @@ def create_app() -> FastAPI:
             settings.rabbitmq_host,
             settings.rabbitmq_port,
             settings.rabbitmq_user,
-            settings.rabbitmq_password,
+            settings.rabbitmq_password.get_secret_value(),
         )
         app.state.rabbit_connection = rabbit
         if rabbit:
@@ -59,12 +92,23 @@ def create_app() -> FastAPI:
 
     Instrumentator().instrument(app).expose(app)
 
+    # Rate limiting
+    limiter = Limiter(key_func=get_remote_address)
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
+
+    # Request size limit
+    app.add_middleware(RequestSizeLimitMiddleware, max_size=50_000_000)
+
+    # CORS restricted
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(","),
+        allow_credentials=False,  # Don't need credentials for API
+        allow_methods=["POST"],   # Only allow POST to /analyze
+        allow_headers=["Content-Type", "X-API-Key"],
+        max_age=600,  # Cache preflight for 10 min
     )
 
     app.include_router(build_router())
