@@ -1,11 +1,31 @@
 """Parse architecture analysis JSON from LLM output (often wrapped in markdown fences)."""
+import ast
 import json
 import re
 from json import JSONDecoder
+from pydantic import BaseModel, Field, ValidationError
 
 from app.domain.models import AnalysisResult, Component, Risk
 
 _FENCE = re.compile(r"```(?:json)?\s*\n(.*?)```", re.DOTALL | re.IGNORECASE)
+
+
+class ComponentSchema(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    type: str = Field(min_length=1, max_length=100)
+    description: str = Field(min_length=1, max_length=1000)
+
+
+class RiskSchema(BaseModel):
+    severity: str = Field(min_length=1, max_length=50)
+    description: str = Field(min_length=1, max_length=1000)
+    recommendation: str = Field(min_length=1, max_length=1000)
+
+
+class AnalysisSchema(BaseModel):
+    components: list[ComponentSchema] = Field(min_items=0, max_items=50)
+    risks: list[RiskSchema] = Field(min_items=0, max_items=20)
+    summary: str = Field(default="", max_length=5000)
 
 
 def _strip_markdown_json_fence(text: str) -> str:
@@ -16,22 +36,32 @@ def _strip_markdown_json_fence(text: str) -> str:
     return text
 
 
-def _loads_json_lenient(raw: str) -> dict:
+def _loads_json_lenient(raw: str | dict) -> dict:
     """Decode first JSON object; tolerate markdown fences or short preamble text."""
+    if isinstance(raw, dict):
+        return raw
+
     s = _strip_markdown_json_fence(raw).strip()
     # If after stripping fences, it starts with {, parse from there
     decoder = JSONDecoder()
     start = s.find("{")
     if start == -1:
         # Try to find JSON anywhere in the text
-        import re
         json_match = re.search(r'\{.*\}', s, re.DOTALL)
         if json_match:
             s = json_match.group(0)
             start = 0
         else:
             raise json.JSONDecodeError("No JSON object", s, 0)
-    obj, _ = decoder.raw_decode(s[start:])
+
+    try:
+        obj, _ = decoder.raw_decode(s[start:])
+    except json.JSONDecodeError:
+        try:
+            obj = ast.literal_eval(s[start:])
+        except Exception:
+            raise
+
     if not isinstance(obj, dict):
         raise json.JSONDecodeError("Expected JSON object", s, start)
     return obj
@@ -40,50 +70,33 @@ def _loads_json_lenient(raw: str) -> dict:
 def parse_analysis_json(content: str) -> AnalysisResult:
     try:
         parsed = _loads_json_lenient(content)
-        components_data = parsed.get("components") or parsed.get("componentes") or []
-        risks_data = parsed.get("risks") or parsed.get("riscos") or []
-        components = [
-            Component(
-                name=c.get("name", "") or c.get("nome", ""),
-                component_type=c.get("type", "") or c.get("tipo", ""),
-                description=(
-                    c.get("description", "")
-                    or c.get("descricao", "")
-                    or c.get("descrição", "")
-                ),
-            )
-            for c in components_data
-        ]
-        risks = []
-        for r in risks_data:
-            rec = (
-                r.get("recommendation")
-                or r.get("recomendação")
-                or r.get("recomendacao")
-                or ""
-            )
-            risks.append(
-                Risk(
-                    severity=r.get("severity", "") or r.get("gravidade", ""),
-                    description=(
-                        r.get("description", "")
-                        or r.get("descricao", "")
-                        or r.get("descrição", "")
-                    ),
-                    recommendation=rec,
-                )
-            )
-        summary = (
-            parsed.get("summary")
-            or parsed.get("resumo")
-            or parsed.get("summary_text")
-            or parsed.get("resumo_da_analise")
-            or content
-        )
-        return AnalysisResult(components=components, risks=risks, summary=summary)
-    except (json.JSONDecodeError, ValueError, TypeError):
+        # Strict schema validation
+        validated = AnalysisSchema.model_validate(parsed)
+        return _convert_to_domain(validated)
+    except (json.JSONDecodeError, ValidationError) as e:
+        # Return safe default, NOT raw LLM output
         return AnalysisResult(
             components=[],
             risks=[],
-            summary="Error parsing AI response: " + content,
+            summary="Analysis unavailable: parsing error"
         )
+
+
+def _convert_to_domain(validated: AnalysisSchema) -> AnalysisResult:
+    components = [
+        Component(
+            name=c.name,
+            component_type=c.type,
+            description=c.description,
+        )
+        for c in validated.components
+    ]
+    risks = [
+        Risk(
+            severity=r.severity,
+            description=r.description,
+            recommendation=r.recommendation,
+        )
+        for r in validated.risks
+    ]
+    return AnalysisResult(components=components, risks=risks, summary=validated.summary)

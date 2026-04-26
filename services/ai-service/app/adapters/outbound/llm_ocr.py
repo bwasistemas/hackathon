@@ -74,7 +74,7 @@ SYSTEM_PROMPT = """
 class LlmOCRAdapter:
     def __init__(self):
         self._client = build_llm_client(
-            api_key=settings.openai_api_key,
+            api_key=settings.openai_api_key.get_secret_value(),
             base_url=settings.openai_base_url,
             model_id=settings.llm_ocr,
             max_tokens=3000,

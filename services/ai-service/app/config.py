@@ -1,11 +1,10 @@
 """Environment-backed settings (composition root reads these; domain stays pure)."""
 import os
-from dataclasses import dataclass
+from pydantic import BaseModel, SecretStr
 
 
-@dataclass(frozen=True)
-class Settings:
-    openai_api_key: str
+class Settings(BaseModel):
+    openai_api_key: SecretStr
     openai_base_url: str
     llm_model: str
     llm_ocr: str
@@ -13,10 +12,10 @@ class Settings:
     rabbitmq_host: str
     rabbitmq_port: int
     rabbitmq_user: str
-    rabbitmq_password: str
+    rabbitmq_password: SecretStr
     minio_endpoint: str
     minio_access_key: str
-    minio_secret_key: str
+    minio_secret_key: SecretStr
     minio_bucket: str
     minio_region: str
     minio_use_ssl: bool
@@ -26,6 +25,10 @@ class Settings:
     node_timeout: float
     repetitive_handoff_detection_window: int
     repetitive_handoff_min_unique_agents: int
+
+    def __repr__(self):
+        # Safe representation for logging
+        return f"Settings(openai_api_key=*****, rabbitmq_password=*****, minio_secret_key=*****, ...)"
 
 
 def load_settings() -> Settings:

@@ -15,7 +15,7 @@ class MinIOStorage:
     def __init__(self, settings: Settings) -> None:
         self._endpoint = settings.minio_endpoint
         self._access_key = settings.minio_access_key
-        self._secret_key = settings.minio_secret_key
+        self._secret_key = settings.minio_secret_key.get_secret_value()
         self._bucket = settings.minio_bucket
         self._region = settings.minio_region
         self._use_ssl = settings.minio_use_ssl
