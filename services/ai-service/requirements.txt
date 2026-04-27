@@ -17,3 +17,9 @@ strands-agents==1.33.0
 strands-agents-tools==0.3.0
 aiobotocore
 botocore
+
+tiktoken
+python-magic
+slowapi
+tenacity
+PyPDF2

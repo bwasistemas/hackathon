@@ -30,6 +30,9 @@ ARCHITECT_PROMPT = """
     - List at least 3 potential architectural risks (e.g., single point of failure, data inconsistency, scalability bottleneck, security exposure).  
     - For each risk, suggest a mitigation strategy.
 
+    3. **Language**
+    - Always respond in Brazilian Portuguese.
+
     3. **Explain the architecture in detail**  
     - Write a clear, structured explanation (2-3 paragraphs).  
     - Cover: overall purpose, key interactions, data flow, and any notable patterns (e.g., CQRS, saga, pub/sub).
@@ -64,6 +67,9 @@ INFRASTRUCTURE_PROMPT = """
     3. **Analyze deployment concerns**  
     - Evaluate: high availability, disaster recovery, scaling strategy (horizontal/vertical), secrets management, observability (logs, metrics, traces).  
     - List at least 2 deployment risks (e.g., stateful pod without persistent volume, lack of health checks).
+
+    4. **Language**
+    - Always respond in Brazilian Portuguese.
 """
 
 DEVELOPER_PROMPT = """
@@ -95,6 +101,9 @@ DEVELOPER_PROMPT = """
         - State management (stateless vs. stateful)
     - Highlight at least 2 potential developer pitfalls (e.g., "No retry logic shown for failed API calls", "Missing schema registry for Kafka").
 
+    4. **Language**
+    - Always respond in Brazilian Portuguese.
+
     ## Implementation Details
     - Transactions: ...
     - Caching: ...
@@ -115,7 +124,7 @@ DEVELOPER_PROMPT = """
 def build_multi_agents() -> Swarm:
     """Build and return a Swarm with specialized agents for architecture analysis."""
     openai_model = build_llm_client(
-        api_key=settings.openai_api_key,
+        api_key=settings.openai_api_key.get_secret_value(),
         base_url=settings.openai_base_url,
     )
 
@@ -170,7 +179,7 @@ def extract_conversation_history(swarm_result) -> str:
 def build_report_agent(swarm_result) -> str:
     """Build a report agent that analyzes the full conversation history and generates a JSON report."""
     openai_model = build_llm_client(
-        api_key=settings.openai_api_key,
+        api_key=settings.openai_api_key.get_secret_value(),
         base_url=settings.openai_base_url,
         temperature=0.1,
         max_tokens=12000,  # Increased for longer history
@@ -189,8 +198,8 @@ def build_report_agent(swarm_result) -> str:
     ],
     "summary": "detailed text explaining the diagram..."
     }
-    Do not include analysis or any text outside of the JSON. Only format the output in the specified JSON,
-    in Brazilian Portuguese."""
+    Do not include analysis or any text outside of the JSON. Only format the output in the specified JSON.
+    Always respond texts in Brazilian Portuguese."""
 
     agent = Agent(
         model=openai_model,
@@ -233,8 +242,19 @@ def _agent_output_to_str(result) -> str:
     """Convert agent result to string."""
     if isinstance(result, str):
         return result
+    if isinstance(result, dict):
+        try:
+            import json
+            return json.dumps(result, ensure_ascii=False)
+        except Exception:
+            return str(result)
     msg = getattr(result, "message", None)
     if msg is not None:
+        if isinstance(msg, dict):
+            content = msg.get("content")
+            if isinstance(content, dict):
+                import json
+                return json.dumps(content, ensure_ascii=False)
         return _text_from_message(msg)
     return str(result)
 

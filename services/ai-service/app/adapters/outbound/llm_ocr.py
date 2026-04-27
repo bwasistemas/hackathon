@@ -38,6 +38,7 @@ SYSTEM_PROMPT = """
     - **Pattern Identification is Mandatory:** Identify the overarching architectural style.
     - **Accuracy:** Only describe what is visually present. Do not hallucinate external services not shown.
     - **Format:** Use the "Output Schema" provided below.
+    - **Language:**Always respond texts in Brazilian Portuguese.
 
     ## OUTPUT SCHEMA
     **Diagram Language:** [Identify Language]
@@ -88,7 +89,7 @@ SYSTEM_PROMPT = """
 class LlmOCRAdapter:
     def __init__(self):
         self._client = build_llm_client(
-            api_key=settings.openai_api_key,
+            api_key=settings.openai_api_key.get_secret_value(),
             base_url=settings.openai_base_url,
             model_id=settings.llm_ocr,
             max_tokens=3000,
