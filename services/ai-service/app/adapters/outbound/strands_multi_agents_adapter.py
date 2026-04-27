@@ -173,7 +173,7 @@ def build_report_agent(swarm_result) -> str:
         api_key=settings.openai_api_key,
         base_url=settings.openai_base_url,
         temperature=0.1,
-        max_tokens=4000,  # Increased for longer history
+        max_tokens=12000,  # Increased for longer history
         response_format={"type": "json_object"},
     )
 
@@ -189,7 +189,8 @@ def build_report_agent(swarm_result) -> str:
     ],
     "summary": "detailed text explaining the diagram..."
     }
-    Do not include analysis or any text outside of the JSON. Only format the output in the specified JSON, in Brazilian Portuguese."""
+    Do not include analysis or any text outside of the JSON. Only format the output in the specified JSON,
+    in Brazilian Portuguese."""
 
     agent = Agent(
         model=openai_model,
