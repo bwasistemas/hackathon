@@ -150,11 +150,18 @@ services:
       - "8004:8004"
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-fiap}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-fiap1234}
+      - MINIO_REGION=${MINIO_REGION:-us-east-1}
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
       - SERVICE_NAME=report-service
     env_file:
       - .env
     depends_on:
       postgres:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     networks:
       - arch-network

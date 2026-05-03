@@ -12,6 +12,8 @@ class Report:
     status: str
     analysis: dict
     created_at: datetime
+    minio_url: Optional[str] = None
+    content_type: Optional[str] = None
 
 
 @dataclass(frozen=True)

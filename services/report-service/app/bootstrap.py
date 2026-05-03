@@ -7,6 +7,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.adapters.inbound.http_routes import build_router
 from app.adapters.outbound.asyncpg_reports import create_repositories
+from app.adapters.outbound.minio_storage import MinIOStorage
 from app.application.report_management import (
     GetReportUseCase,
     ListReportsUseCase,
@@ -27,6 +28,7 @@ def create_app() -> FastAPI:
             settings.database_url
         )
         app.state.db_pool = db_pool
+        app.state.minio_storage = MinIOStorage(settings)
 
         app.state.get_report_use_case = GetReportUseCase(repository=report_repo)
         app.state.list_reports_use_case = ListReportsUseCase(repository=report_repo)

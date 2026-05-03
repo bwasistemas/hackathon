@@ -18,6 +18,8 @@ class ReportResponse(BaseModel):
     status: str
     analysis: dict
     created_at: str
+    minio_url: Optional[str] = None
+    content_type: Optional[str] = None
 
 
 class ReportSummarySchema(BaseModel):
