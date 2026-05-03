@@ -23,8 +23,8 @@ class RiskSchema(BaseModel):
 
 
 class AnalysisSchema(BaseModel):
-    components: list[ComponentSchema] = Field(min_items=0, max_items=50)
-    risks: list[RiskSchema] = Field(min_items=0, max_items=20)
+    components: list[ComponentSchema] = Field(min_length=0, max_length=50)
+    risks: list[RiskSchema] = Field(min_length=0, max_length=20)
     summary: str = Field(default="", max_length=5000)
 
 

@@ -1,0 +1,37 @@
+name: AI Service Tests
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test-ai-service:
+    name: pytest (services/ai-service)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            services/ai-service/requirements.txt
+            services/ai-service/requirements-dev.txt
+
+      - name: Install dependencies
+        working-directory: services/ai-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests
+        working-directory: services/ai-service
+        run: |
+          pytest -q
+
