@@ -24,8 +24,7 @@
 - [X] Usar baratinha para fazer OCR e um modelo mais robusto para analisar e gerar a sugestão da arquitetura
 - [ ] Refinar prompts da aplicação
 - [X] Adicionar guardrails
-- [ ] Aplicar técnicas de alucinação
-- [ ] Criar RAG de livros ou artigos sobre arquitetura para o modelo consultar (?)
+- [ ] Aplicar técnicas de antialucinação
 - [ ] Criar relatório com os seguintes pontos: Justificativa da abordagem escolhida;  Demonstração prática da análise; Discussão de limitações do modelo; Como a IA é acionada; Como o sistema trata falhas da IA; Como o resultado da IA é persistido; Como o relatório é gerado a partir da análise;
 
 ## Segurança
