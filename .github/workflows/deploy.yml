@@ -17,6 +17,10 @@ jobs:
   test-upload-service:
     uses: ./.github/workflows/reusable-upload-service-tests.yml
   deploy-app:
-    run: |
-      echo "Deploying application..."
-      echo "TODO: Implement deployment logic"
+    needs: [test-report-service, test-ai-service, test-upload-service]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy placeholder
+        run: |
+          echo "Deploying application..."
+          echo "TODO: Implement deployment logic"
