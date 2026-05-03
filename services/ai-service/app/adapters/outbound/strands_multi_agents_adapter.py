@@ -182,7 +182,7 @@ def build_report_agent(swarm_result) -> str:
         api_key=settings.openai_api_key.get_secret_value(),
         base_url=settings.openai_base_url,
         temperature=0.1,
-        max_tokens=4000,  # Increased for longer history
+        max_tokens=12000,  # Increased for longer history
         response_format={"type": "json_object"},
     )
 
