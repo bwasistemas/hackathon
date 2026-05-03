@@ -3,7 +3,7 @@
 ## Infraestrutura
 - [ ] Utilizar Docker e/ou Kubernets
 - [ ] Criar pipeline CI/CD com: build, testes e deploy.
-- [ ] Utilizar [grafana loki](https://grafana.com/oss/loki/) para logs estruturados
+- [X] Utilizar [grafana loki](https://grafana.com/oss/loki/) para logs estruturados
 
 ## Arquitetura do Sistema
 
