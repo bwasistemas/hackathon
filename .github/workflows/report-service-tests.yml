@@ -1,0 +1,14 @@
+# Triggers only — test logic lives in reusable-report-service-tests.yml
+name: Report Service Tests
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-report-service:
+    uses: ./.github/workflows/reusable-report-service-tests.yml
