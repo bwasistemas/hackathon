@@ -6,3 +6,4 @@ asyncpg==0.29.0
 sqlalchemy[asyncio]==2.0.27
 python-dotenv==1.0.1
 prometheus-fastapi-instrumentator==7.0.0
+aiobotocore

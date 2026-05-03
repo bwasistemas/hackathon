@@ -1,7 +1,9 @@
 """FastAPI inbound adapter: maps HTTP <-> application use cases."""
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi.responses import Response
 
 from app.adapters.inbound.schemas import (
     FeedbackRequest,
@@ -79,11 +81,43 @@ def build_router() -> APIRouter:
                 status=report.status,
                 analysis=report.analysis,
                 created_at=report.created_at.isoformat(),
+                minio_url=report.minio_url,
+                content_type=report.content_type,
             )
         except ReportNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e)) from e
         except DatabaseError as e:
             raise HTTPException(status_code=500, detail=str(e)) from e
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+    @router.get("/reports/{upload_id}/attachment")
+    async def get_attachment(
+        upload_id: str,
+        request: Request,
+        use_case: GetReportUseCase = Depends(get_get_report_use_case),
+    ):
+        """Stream the original uploaded file from MinIO."""
+        minio_storage = getattr(request.app.state, "minio_storage", None)
+        if not minio_storage:
+            raise HTTPException(status_code=503, detail="Storage unavailable")
+        try:
+            report = await use_case.execute(upload_id)
+            if not report.minio_url:
+                raise HTTPException(status_code=404, detail="No attachment")
+            file_path = await minio_storage.download_file(report.minio_url)
+            try:
+                with open(file_path, "rb") as f:
+                    data = f.read()
+            finally:
+                if os.path.exists(file_path):
+                    os.unlink(file_path)
+            content_type = report.content_type or "application/octet-stream"
+            return Response(content=data, media_type=content_type)
+        except HTTPException:
+            raise
+        except ReportNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e)) from e
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e)) from e
 

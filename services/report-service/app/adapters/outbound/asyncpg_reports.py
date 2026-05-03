@@ -55,6 +55,8 @@ class AsyncpgReportRepository(ReportRepositoryPort):
                 status=row["status"],
                 analysis=analysis,
                 created_at=row["created_at"],
+                minio_url=row["minio_url"],
+                content_type=row["content_type"],
             )
 
     async def list_reports(self, status: Optional[str], limit: int) -> List[ReportSummary]:

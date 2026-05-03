@@ -13,6 +13,8 @@ const toastContainer = document.getElementById('toast-container');
 const reportModal = document.getElementById('report-modal');
 
 let currentFile = null;
+let currentReportId = null;
+let currentReportData = null;
 
 // Clock
 function updateDateTime() {
@@ -213,6 +215,8 @@ async function fetchAnalyses() {
 
 // Report Modal
 window.viewReport = async (id) => {
+    currentReportId = id;
+    currentReportData = null;
     reportModal.classList.remove('hidden');
     const body = document.getElementById('report-modal-body');
     body.innerHTML = '<div style="text-align:center;padding:40px;"><i data-lucide="loader" class="animate-spin" style="width:32px;height:32px;color:var(--brand-primary);"></i></div>';
@@ -222,6 +226,7 @@ window.viewReport = async (id) => {
         const res = await fetch(`/api/v1/reports/${id}`);
         if(!res.ok) throw new Error('Não foi possível carregar o relatório.');
         const data = await res.json();
+        currentReportData = data;
         const r = (data.analysis && data.analysis.ai) ? data.analysis.ai : {};
         const rawText = (data.analysis && data.analysis.text) ? data.analysis.text : '';
 
@@ -275,6 +280,240 @@ window.viewReport = async (id) => {
 
 window.closeReportModal = () => {
     reportModal.classList.add('hidden');
+}
+
+window.downloadPdf = async () => {
+    if (!currentReportId || !currentReportData) return;
+
+    const btn = document.getElementById('btn-download-pdf');
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i data-lucide="loader" class="animate-spin" style="width:14px;height:14px;"></i>';
+    btn.disabled = true;
+    lucide.createIcons();
+
+    try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+        const pageW = 210, pageH = 297, margin = 20;
+        const contentW = pageW - margin * 2;
+        let y = 0;
+
+        const data = currentReportData;
+        const r = (data.analysis && data.analysis.ai) ? data.analysis.ai : {};
+        const rawText = (data.analysis && data.analysis.text) ? data.analysis.text : '';
+
+        // ── HEADER ──────────────────────────────────────────────────
+        doc.setFillColor(0, 0, 0);
+        doc.rect(0, 0, pageW, 36, 'F');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(20);
+        doc.setTextColor(237, 20, 91);
+        doc.text('ArchiAnalyzer', margin, 14);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(160, 160, 180);
+        doc.text('Relatorio de Analise de Arquitetura', margin, 21);
+
+        doc.setFontSize(8);
+        doc.setTextColor(100, 100, 120);
+        const dateStr = data.created_at ? new Date(data.created_at).toLocaleString('pt-BR') : '';
+        doc.text(`Arquivo: ${data.filename || ''}   |   ${dateStr}`, margin, 29);
+
+        y = 46;
+
+        // Helpers
+        const checkPage = (needed = 15) => {
+            if (y + needed > pageH - 15) { doc.addPage(); y = 20; }
+        };
+
+        const sectionTitle = (title) => {
+            checkPage(18);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(12);
+            doc.setTextColor(237, 20, 91);
+            doc.text(title, margin, y);
+            y += 2;
+            doc.setDrawColor(237, 20, 91);
+            doc.setLineWidth(0.3);
+            doc.line(margin, y, pageW - margin, y);
+            y += 6;
+        };
+
+        const bodyText = (text) => {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.setTextColor(50, 55, 75);
+            const lines = doc.splitTextToSize(text || '', contentW);
+            lines.forEach(line => { checkPage(6); doc.text(line, margin, y); y += 5.5; });
+            y += 2;
+        };
+
+        // ── RESUMO ──────────────────────────────────────────────────
+        sectionTitle('Resumo da Analise');
+        bodyText(r.summary || 'Sem resumo disponivel.');
+
+        // ── COMPONENTES ─────────────────────────────────────────────
+        y += 4;
+        sectionTitle('Componentes Identificados');
+        const components = r.components || [];
+        if (!components.length) {
+            bodyText('Nenhum componente identificado.');
+        } else {
+            components.forEach(c => {
+                const descLines = doc.splitTextToSize(c.description || '', contentW - 6);
+                const boxH = 8 + descLines.length * 5 + 3;
+                checkPage(boxH + 4);
+
+                doc.setFillColor(246, 248, 252);
+                doc.setDrawColor(215, 222, 235);
+                doc.setLineWidth(0.2);
+                doc.roundedRect(margin, y - 4, contentW, boxH, 1.5, 1.5, 'FD');
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(10);
+                doc.setTextColor(30, 41, 59);
+                doc.text(c.name || '', margin + 3, y + 1);
+
+                const nameW = doc.getTextWidth(c.name || '') + 2;
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8.5);
+                doc.setTextColor(100, 116, 139);
+                doc.text(`(${c.type || ''})`, margin + 3 + nameW, y + 1);
+
+                y += 6;
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(71, 85, 105);
+                descLines.forEach(line => { doc.text(line, margin + 3, y); y += 5; });
+                y += 4;
+            });
+        }
+
+        // ── RISCOS ──────────────────────────────────────────────────
+        y += 4;
+        sectionTitle('Riscos Arquiteturais');
+        const risks = r.risks || [];
+        if (!risks.length) {
+            bodyText('Nenhum risco identificado.');
+        } else {
+            risks.forEach(risk => {
+                const severity = (risk.severity || '').toUpperCase();
+                const descLines = doc.splitTextToSize(risk.description || '', contentW - 16);
+                const recLines = doc.splitTextToSize(risk.recommendation || '', contentW - 8);
+                const boxH = 9 + descLines.length * 5 + (recLines.length ? recLines.length * 4.5 + 9 : 0) + 4;
+                checkPage(boxH + 4);
+
+                let accent = [16, 185, 129];
+                if (['HIGH','CRITICAL'].includes(severity)) accent = [239, 68, 68];
+                else if (severity === 'MEDIUM') accent = [234, 179, 8];
+
+                doc.setFillColor(249, 250, 252);
+                doc.setDrawColor(...accent);
+                doc.setLineWidth(0.4);
+                doc.rect(margin, y - 4, contentW, boxH, 'FD');
+                doc.setFillColor(...accent);
+                doc.rect(margin, y - 4, 2.5, boxH, 'F');
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(9);
+                doc.setTextColor(...accent);
+                doc.text(`[${severity}]`, margin + 5, y + 1);
+                const badgeW = doc.getTextWidth(`[${severity}]`) + 2;
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9.5);
+                doc.setTextColor(30, 41, 59);
+                descLines.forEach((line, i) => {
+                    if (i === 0) doc.text(line, margin + 5 + badgeW, y + 1);
+                    else { y += 5; doc.text(line, margin + 5, y + 1); }
+                });
+                y += 7;
+
+                if (recLines.length) {
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(8.5);
+                    doc.setTextColor(16, 185, 129);
+                    doc.text('Recomendacao:', margin + 5, y);
+                    y += 5;
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(8.5);
+                    doc.setTextColor(71, 85, 105);
+                    recLines.forEach(line => { checkPage(5); doc.text(line, margin + 5, y); y += 4.5; });
+                }
+                y += 6;
+            });
+        }
+
+        // ── TEXTO BRUTO OCR ─────────────────────────────────────────
+        if (rawText) {
+            y += 4;
+            sectionTitle('Texto Bruto Extraido (OCR)');
+            checkPage(20);
+            const rawLines = doc.splitTextToSize(rawText, contentW - 8);
+            const visibleLines = rawLines.slice(0, 80);
+            const boxH = visibleLines.length * 4.5 + 8;
+            checkPage(Math.min(boxH, 50));
+            doc.setFillColor(18, 18, 18);
+            doc.setDrawColor(237, 20, 91);
+            doc.setLineWidth(0.3);
+            doc.rect(margin, y - 3, contentW, Math.min(boxH, pageH - y - 20), 'FD');
+            doc.setFont('courier', 'normal');
+            doc.setFontSize(7);
+            doc.setTextColor(210, 210, 215);
+            visibleLines.forEach(line => {
+                if (y + 4.5 > pageH - 18) { doc.addPage(); y = 20; doc.setFillColor(18, 18, 18); doc.rect(margin, y - 3, contentW, 80, 'F'); }
+                doc.text(line, margin + 3, y);
+                y += 4.5;
+            });
+            y += 8;
+        }
+
+        // ── ANEXO ORIGINAL (ultima pagina) ───────────────────────────
+        try {
+            const attachRes = await fetch(`/api/v1/reports/${currentReportId}/attachment`);
+            if (attachRes.ok) {
+                const ct = attachRes.headers.get('content-type') || '';
+                if (ct.startsWith('image/')) {
+                    const blob = await attachRes.blob();
+                    const imgDataUrl = await new Promise(resolve => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.readAsDataURL(blob);
+                    });
+                    doc.addPage();
+                    doc.setFillColor(0, 0, 0);
+                    doc.rect(0, 0, pageW, 18, 'F');
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(10);
+                    doc.setTextColor(237, 20, 91);
+                    doc.text(`Arquivo Original: ${data.filename || ''}`, margin, 12);
+                    const format = ct.includes('png') ? 'PNG' : 'JPEG';
+                    doc.addImage(imgDataUrl, format, margin, 22, contentW, 0);
+                }
+            }
+        } catch (_) { /* skip silently */ }
+
+        // ── NUMERACAO DE PAGINAS ─────────────────────────────────────
+        const total = doc.getNumberOfPages();
+        for (let i = 1; i <= total; i++) {
+            doc.setPage(i);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8);
+            doc.setTextColor(160, 160, 175);
+            doc.text('ArchiAnalyzer  |  Hackathon IA para DEVs - FIAP', margin, pageH - 8);
+            doc.text(`${i} / ${total}`, pageW - margin, pageH - 8, { align: 'right' });
+        }
+
+        doc.save(`relatorio-${currentReportId.substring(0, 8)}.pdf`);
+    } catch (err) {
+        showToast('Erro ao gerar PDF: ' + err.message, 'error');
+    } finally {
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+        lucide.createIcons();
+    }
 }
 
 let currentRating = 0;
