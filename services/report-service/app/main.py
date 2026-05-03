@@ -1,4 +1,7 @@
 """ASGI entrypoint for uvicorn: ``uvicorn app.main:app``."""
+from app.logging_config import setup_logging
+setup_logging("report-service")
+
 from app.bootstrap import create_app
 
 app = create_app()

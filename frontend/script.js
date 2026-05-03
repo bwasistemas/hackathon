@@ -336,8 +336,9 @@ const servicesCategories = [
         title: 'Monitoramento Observability',
         icon: 'activity',
         items: [
-            { name: 'Grafana', desc: 'Dashboard avançado de monitoramento e logs visuais da infra.', port: 3000, url: 'http://localhost:3000', color: '#F46800', imgUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/grafana/grafana-original.svg' },
-            { name: 'Prometheus', desc: 'Motor de coleta e processamento de tempo métricas e logs.', port: 9090, url: 'http://localhost:9090', color: '#E6522C', imgUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/prometheus/prometheus-original.svg' }
+            { name: 'Grafana', desc: 'Dashboard de monitoramento com métricas (Prometheus) e logs estruturados (Loki).', port: 3000, url: 'http://localhost:3000', color: '#F46800', imgUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/grafana/grafana-original.svg' },
+            { name: 'Prometheus', desc: 'Motor de coleta e processamento de métricas em tempo real.', port: 9090, url: 'http://localhost:9090', color: '#E6522C', imgUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/prometheus/prometheus-original.svg' },
+            { name: 'Loki', desc: 'Agregador de logs estruturados dos microsserviços (JSON). Acessível via Grafana.', port: 3100, url: 'http://localhost:3000/d/arch-logs', color: '#F46800', imgUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/grafana/grafana-original.svg' }
         ]
     }
 ];
