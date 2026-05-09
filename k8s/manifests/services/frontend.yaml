@@ -1,0 +1,49 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: arch-analyzer
+  labels:
+    app: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: arch-analyzer/frontend:local
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8051
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8051
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: arch-analyzer
+spec:
+  selector:
+    app: frontend
+  ports:
+  - port: 8051
+    targetPort: 8051

@@ -1,0 +1,25 @@
+---
+# Ingress para o frontend (porta 80 do servidor)
+# O frontend já faz proxy interno para upload-service e report-service via nginx.conf
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: arch-analyzer-ingress
+  namespace: arch-analyzer
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 8051

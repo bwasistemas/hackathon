@@ -1,0 +1,71 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report-service
+  namespace: arch-analyzer
+  labels:
+    app: report-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: report-service
+  template:
+    metadata:
+      labels:
+        app: report-service
+    spec:
+      containers:
+      - name: report-service
+        image: arch-analyzer/report-service:local
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8004
+        env:
+        - name: DATABASE_URL
+          value: "postgresql+asyncpg://fiap:fiap@postgres:5432/fiap"
+        - name: MINIO_ENDPOINT
+          value: "minio:9000"
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: arch-analyzer-secrets
+              key: MINIO_ACCESS_KEY
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: arch-analyzer-secrets
+              key: MINIO_SECRET_KEY
+        - name: MINIO_REGION
+          value: "us-east-1"
+        - name: MINIO_USE_SSL
+          value: "false"
+        - name: SERVICE_NAME
+          value: "report-service"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8004
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: report-service
+  namespace: arch-analyzer
+spec:
+  selector:
+    app: report-service
+  ports:
+  - port: 8004
+    targetPort: 8004
