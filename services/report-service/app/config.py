@@ -1,12 +1,34 @@
 """Environment-backed settings (composition root reads these; domain stays pure)."""
+import logging
 import os
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
+
+_INSECURE_JWT_DEFAULT = "your-secret-key-here-change-in-production"
 
 
 @dataclass(frozen=True)
 class Settings:
     """Application settings loaded from environment variables."""
     database_url: str
+    jwt_secret_key: str
+    jwt_algorithm: str
+    jwt_access_token_expire_minutes: int
+
+
+def _require_jwt_secret() -> str:
+    """The report-service does not issue tokens, but it MUST share the same
+    secret as the upload-service in order to validate them."""
+    secret = os.getenv("JWT_SECRET_KEY", "").strip()
+    if not secret or secret == _INSECURE_JWT_DEFAULT:
+        raise RuntimeError(
+            "JWT_SECRET_KEY is not set or still uses the insecure default. "
+            "It must match the value configured on the upload-service."
+        )
+    if len(secret) < 32:
+        logger.warning("JWT_SECRET_KEY is shorter than 32 chars; consider rotating to a longer value")
+    return secret
 
 
 def load_settings() -> Settings:
@@ -16,4 +38,7 @@ def load_settings() -> Settings:
             "DATABASE_URL",
             "postgresql+asyncpg://fiap:fiap@postgres:5432/fiap",
         ),
+        jwt_secret_key=_require_jwt_secret(),
+        jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
+        jwt_access_token_expire_minutes=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30")),
     )

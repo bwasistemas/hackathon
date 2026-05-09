@@ -5,6 +5,17 @@ from typing import Optional
 from pydantic import BaseModel
 
 
+class Token(BaseModel):
+    """Schema for authentication token response."""
+    access_token: str
+    token_type: str
+
+
+class TokenData(BaseModel):
+    """Decoded JWT payload (only the username we care about)."""
+    username: Optional[str] = None
+
+
 class UploadResponse(BaseModel):
     """Response schema for upload operations."""
     id: str

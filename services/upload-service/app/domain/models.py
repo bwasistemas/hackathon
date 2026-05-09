@@ -5,6 +5,17 @@ from typing import Optional
 
 
 @dataclass(frozen=True)
+class User:
+    """User entity for authentication."""
+    id: str
+    username: str
+    email: str
+    hashed_password: str
+    is_active: bool
+    created_at: datetime
+
+
+@dataclass(frozen=True)
 class Upload:
     """Upload entity representing a file upload."""
     id: str

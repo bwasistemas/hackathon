@@ -1,4 +1,5 @@
 """PostgreSQL (asyncpg) adapter for upload status and AI payload."""
+import json
 from typing import Optional
 
 import asyncpg
@@ -49,6 +50,21 @@ class AsyncpgUploadRepository(UploadRepositoryPort):
                 upload_id,
             )
 
+    async def mark_failed(self, upload_id: str, error_message: str) -> None:
+        payload = json.dumps({"text": "", "ai": {"error": error_message}})
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                    UPDATE uploads SET
+                        status = 'ERROR',
+                        updated_at = NOW(),
+                        file_path = $1
+                    WHERE id = $2
+                """,
+                payload,
+                upload_id,
+            )
+
 
 class NullUploadRepository(UploadRepositoryPort):
     """No-op when the database is unavailable."""
@@ -57,6 +73,9 @@ class NullUploadRepository(UploadRepositoryPort):
         return None
 
     async def mark_done_with_payload(self, upload_id: str, payload_json: str) -> None:
+        return None
+
+    async def mark_failed(self, upload_id: str, error_message: str) -> None:
         return None
 
 

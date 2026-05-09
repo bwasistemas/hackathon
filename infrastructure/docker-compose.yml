@@ -67,6 +67,8 @@ services:
     container_name: arch-analyzer-upload
     ports:
       - "8001:8001"
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}
       - RABBITMQ_HOST=rabbitmq
@@ -80,6 +82,13 @@ services:
       - MINIO_REGION=${MINIO_REGION:-us-east-1}
       - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
       - SERVICE_NAME=upload-service
+      # Shared JWT signing key (must match ai-service & report-service)
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      - ADMIN_USER=${ADMIN_USER}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8051}
     depends_on:
       postgres:
         condition: service_healthy
@@ -105,6 +114,8 @@ services:
     container_name: arch-analyzer-ai
     ports:
       - "8003:8003"
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}
       - RABBITMQ_HOST=rabbitmq
@@ -121,8 +132,10 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
-    env_file:
-      - .env
+      # Shared JWT verification key (must match upload-service)
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8051}
     volumes:
       - uploads_data:/app/uploads
     depends_on:
@@ -148,11 +161,15 @@ services:
     container_name: arch-analyzer-report
     ports:
       - "8004:8004"
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}
       - SERVICE_NAME=report-service
-    env_file:
-      - .env
+      # Shared JWT verification key (must match upload-service)
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8051}
     depends_on:
       postgres:
         condition: service_healthy
@@ -175,6 +192,9 @@ services:
     depends_on:
       - upload-service
       - report-service
+      - rabbitmq
+      - grafana
+      - prometheus
     networks:
       - arch-network
     restart: unless-stopped

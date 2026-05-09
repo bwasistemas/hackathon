@@ -1,6 +1,11 @@
 """HTTP request/response DTOs (adapter layer; may diverge from domain naming)."""
-import re
+from typing import Optional
 from pydantic import BaseModel, Field, field_validator
+
+
+class TokenData(BaseModel):
+    """Decoded JWT payload (only the username we care about)."""
+    username: Optional[str] = None
 
 
 class AnalyzeRequest(BaseModel):
@@ -31,10 +36,11 @@ class ComponentSchema(BaseModel):
 class RiskSchema(BaseModel):
     severity: str = Field(min_length=1, max_length=50)
     description: str = Field(min_length=1, max_length=1000)
-    recommendation: str = Field(min_length=1, max_length=1000)
+    recommendation: str = Field(default="", max_length=1000)
 
 
 class AnalysisResponse(BaseModel):
     components: list[ComponentSchema] = Field(min_items=0, max_items=50)
     risks: list[RiskSchema] = Field(min_items=0, max_items=20)
-    summary: str = Field(min_length=1, max_length=5000)
+    summary: str = Field(default="", max_length=5000)
+    source_assessment: str = Field(default="", max_length=4000)

@@ -7,10 +7,11 @@ FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Copy static frontend files
-COPY index.html /usr/share/nginx/html/
-COPY styles.css /usr/share/nginx/html/
-COPY script.js  /usr/share/nginx/html/
-COPY fiap-png.png /usr/share/nginx/html/
+COPY index.html          /usr/share/nginx/html/
+COPY styles.css          /usr/share/nginx/html/
+COPY script.js           /usr/share/nginx/html/
+COPY security-logger.js  /usr/share/nginx/html/
+COPY fiap-png.png        /usr/share/nginx/html/
 
 # Expose port 8051
 EXPOSE 8051

@@ -20,3 +20,6 @@ class UploadRepositoryPort(Protocol):
 
     async def mark_done_with_payload(self, upload_id: str, payload_json: str) -> None:
         """Persist completion; payload_json is the serialized file_path column value."""
+
+    async def mark_failed(self, upload_id: str, error_message: str) -> None:
+        """Set status ERROR and persist a JSON payload the report API can display."""

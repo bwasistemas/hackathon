@@ -1,13 +1,16 @@
 """Use case: OCR → LLM analysis → persist upload result (RabbitMQ-driven flow)."""
 import json
+import logging
 import os
 import magic
 from typing import Optional
 
-from app.application.ports import LlmAnalyzerPort, TextExtractionPort, UploadRepositoryPort
+from app.application.ports import LlmAnalyzerPort, UploadRepositoryPort
 from app.domain.models import AnalysisResult
 
 from app.adapters.outbound.llm_ocr import LlmOCRAdapter
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessDiagramUploadUseCase:
@@ -44,7 +47,8 @@ class ProcessDiagramUploadUseCase:
             # Validate file
             self._validate_file(local_file_path)
 
-            text = await self._ocr.analyze_diagram(local_file_path)
+            extraction = await self._ocr.analyze_diagram(local_file_path)
+            text = extraction.text
             source_hint = _build_source_hint(local_file_path)
 
             try:
@@ -53,9 +57,25 @@ class ProcessDiagramUploadUseCase:
             except Exception as e:
                 ai_result = {"error": str(e)}
 
-            payload = json.dumps({"text": text, "ai": ai_result})
+            payload = json.dumps(
+                {
+                    "text": text,
+                    "text_extraction": {
+                        "source": extraction.source,
+                        "multimodal_model": extraction.multimodal_model,
+                        "detail_pt": extraction.detail_pt,
+                    },
+                    "ai": ai_result,
+                }
+            )
             await self._uploads.mark_done_with_payload(uid, payload)
 
+        except Exception as e:
+            logger.exception("Diagram processing failed for upload %s", uid)
+            try:
+                await self._uploads.mark_failed(uid, str(e))
+            except Exception as db_err:
+                logger.error("Could not persist ERROR status: %s", db_err)
         finally:
             # Clean up temp file if we downloaded from MinIO
             if temp_file_to_cleanup and os.path.exists(temp_file_to_cleanup):
@@ -92,7 +112,7 @@ def _build_source_hint(file_path: str) -> str:
 
 def _analysis_to_storage_dict(result: AnalysisResult) -> dict:
     """Convert an analysis result to a dictionary for storage."""
-    return {
+    out = {
         "components": [
             {
                 "name": c.name,
@@ -110,4 +130,6 @@ def _analysis_to_storage_dict(result: AnalysisResult) -> dict:
             for r in result.risks
         ],
         "summary": result.summary,
+        "source_assessment": result.source_assessment or "",
     }
+    return out
