@@ -1,0 +1,14 @@
+# Triggers only — test logic lives in reusable-ai-service-tests.yml
+name: AI Service Tests
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-ai-service:
+    uses: ./.github/workflows/reusable-ai-service-tests.yml

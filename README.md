@@ -60,13 +60,18 @@ Este script verifica:
 │   (FastAPI)      │                          │   :5432          │
 │   :8004          │                          └──────────────────┘
 └──────────────────┘
-        ▲
-        │
-┌──────────────────┐
-│  Prometheus      │
-│  + Grafana       │
-│  :9090/:3000     │
-└──────────────────┘
+
+Observabilidade (logs + métricas):
+
+┌──────────────┐   scrape   ┌──────────────┐   datasource  ┌──────────────┐
+│  Prometheus  │──────────▶│    Grafana    │◀─────────────│     Loki     │
+│   :9090      │            │    :3000      │               │    :3100     │
+└──────────────┘            └──────────────┘               └──────┲───────┘
+                                                                   ║ push logs
+                                                            ┌──────╚───────┐
+                                                            │   Promtail   │
+                                                            │ (Docker logs)│
+                                                            └──────────────┘
 ```
 
 ## Quick Start
@@ -113,6 +118,7 @@ docker-compose up -d
 | **MinIO API** | http://localhost:9000 | fiap / fiap1234 |
 | **Prometheus** | http://localhost:9090 | - |
 | **Grafana** | http://localhost:3000 | fiap / fiap |
+| **Loki** | http://localhost:3100 | - (interno) |
 
 ## Estrutura do Projeto
 
@@ -129,7 +135,9 @@ Hachaton/
 │   ├── docker-compose.yml      # Orquestração de serviços
 │   ├── dockerfiles/            # Dockerfiles dos microsserviços
 │   ├── prometheus/             # Configuração Prometheus
-│   ├── grafana/                # Dashboards + Provisioning
+│   ├── loki/                   # Configuração Grafana Loki (log storage)
+│   ├── promtail/               # Configuração Promtail (log collector)
+│   ├── grafana/                # Dashboards + Provisioning (métricas + logs)
 │   ├── .github/workflows/       # CI/CD
 │   ├── .env.example
 │   └── README.md
@@ -205,14 +213,39 @@ MINIO_ROOT_PASSWORD=fiap1234
 
 ## Observabilidade
 
-### Prometheus
-- Métricas de todos os serviços FastAPI
-- Scraping automático configurado
+O stack de observabilidade cobre três pilares: **métricas**, **logs** e **visualização**.
 
-### Grafana
-- Dashboard pré-configurado
-- Datasource Prometheus automático
-- Métricas de Request Rate, Latência p95, Status
+### Métricas — Prometheus + Grafana
+- Todos os serviços FastAPI expõem `/metrics` via `prometheus-fastapi-instrumentator`
+- Prometheus faz scraping automático de todos os containers
+- Dashboard "Arch Analyzer - Overview" provisionado automaticamente no Grafana com request rate, latência p95 e status por serviço
+
+### Logs — Grafana Loki + Promtail
+- **Todos os serviços emitem logs em formato JSON estruturado** via `python-json-logger`
+- Cada linha de log contém: `timestamp`, `level`, `service`, `name` (logger), `message`
+- **Promtail** coleta os logs diretamente dos containers Docker via socket (`/var/run/docker.sock`) e adiciona as labels `service`, `container` e `level`
+- **Loki** indexa e armazena os logs, permitindo consultas por serviço, nível e período
+- Dashboard **"Arch Analyzer - Logs"** provisionado automaticamente no Grafana com:
+  - Volume de logs por nível ao longo do tempo
+  - Contadores de erros e warnings no período
+  - Stream de logs em tempo real com filtro por serviço
+  - Painel exclusivo de erros
+
+#### Acessar logs no Grafana
+1. Acesse http://localhost:3000 (fiap / fiap)
+2. Menu lateral → Dashboards → **Arch Analyzer - Logs**
+3. Use o filtro **Serviço** para isolar um microsserviço específico
+
+#### Variável de ambiente para log level
+```env
+LOG_LEVEL=INFO   # DEBUG | INFO | WARNING | ERROR
+```
+
+### Grafana — Datasources provisionados automaticamente
+| Datasource | UID | Uso |
+|---|---|---|
+| Prometheus | `prometheus` | Métricas |
+| Loki | `loki` | Logs estruturados |
 
 ## CI/CD
 

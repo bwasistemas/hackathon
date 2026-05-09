@@ -1,5 +1,8 @@
 """Diagram text extraction: multimodal LLM (LLM_OCR model) with Tesseract fallback."""
 from __future__ import annotations
+import re
+
+from strands import Agent
 
 import asyncio
 import base64
@@ -36,6 +39,18 @@ Se houver pouco texto mas formas claras, descreva brevemente o layout (camadas, 
 Não invente nomes ilegíveis; indique [ilegível] quando aplicável.
 Responda apenas com o texto útil para um arquiteto revisar — sem JSON e sem markdown."""
 
+_RE_EMAIL = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+_RE_PHONE = re.compile(r"\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b")
+_RE_CREDIT_CARD = re.compile(r"\b(?:\d{4} \d{4} \d{4} \d{4}|\d{4}-\d{4}-\d{4}-\d{4})\b")
+_RE_IP_ADDRESS = re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")
+
+
+def redact_sensitive(text: str) -> str:
+    text = _RE_EMAIL.sub("[REDACTED_EMAIL]", text)
+    text = _RE_PHONE.sub("[REDACTED_PHONE]", text)
+    text = _RE_CREDIT_CARD.sub("[REDACTED_CREDIT_CARD]", text)
+    text = _RE_IP_ADDRESS.sub("[REDACTED_IP_ADDRESS]", text)
+    return text
 
 def _response_text(response: Any) -> str:
     if hasattr(response, "choices") and response.choices:
@@ -157,7 +172,7 @@ class LlmOCRAdapter:
                     if text:
                         logger.info("Vision OCR succeeded (%s chars)", len(text))
                         return DiagramTextExtraction(
-                            text=text,
+                            text=redact_sensitive(text),
                             source="llm_multimodal",
                             multimodal_model=configured_model,
                             detail_pt=(
@@ -192,7 +207,7 @@ class LlmOCRAdapter:
             if not extracted_text:
                 extracted_text = "OCR Error: No text could be extracted from the file."
             return DiagramTextExtraction(
-                text=extracted_text,
+                text=redact_sensitive(extracted_text),
                 source="tesseract",
                 multimodal_model=configured_model,
                 detail_pt=tess_reason,

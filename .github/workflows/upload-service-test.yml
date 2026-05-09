@@ -1,0 +1,14 @@
+# Triggers only — test logic lives in reusable-upload-service-tests.yml
+name: Upload Service Tests
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-upload-service:
+    uses: ./.github/workflows/reusable-upload-service-tests.yml

@@ -15,7 +15,11 @@ class Settings:
     jwt_secret_key: str
     jwt_algorithm: str
     jwt_access_token_expire_minutes: int
-
+    minio_endpoint: str
+    minio_access_key: str
+    minio_secret_key: str
+    minio_region: str
+    minio_use_ssl: bool
 
 def _require_jwt_secret() -> str:
     """The report-service does not issue tokens, but it MUST share the same
@@ -41,4 +45,9 @@ def load_settings() -> Settings:
         jwt_secret_key=_require_jwt_secret(),
         jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
         jwt_access_token_expire_minutes=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30")),
+        minio_endpoint=os.getenv("MINIO_ENDPOINT", "minio:9000"),
+        minio_access_key=os.getenv("MINIO_ACCESS_KEY", "fiap"),
+        minio_secret_key=os.getenv("MINIO_SECRET_KEY", "fiap1234"),
+        minio_region=os.getenv("MINIO_REGION", "us-east-1"),
+        minio_use_ssl=os.getenv("MINIO_USE_SSL", "false").lower() == "true",
     )

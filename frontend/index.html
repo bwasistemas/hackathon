@@ -13,6 +13,9 @@
         src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"
         crossorigin="anonymous"
         referrerpolicy="no-referrer"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
     <div class="bg-gradient"></div>
@@ -266,6 +269,11 @@
                     </div>
                     <div class="modal-body" id="report-modal-body">
                         <!-- Loaded dynamically -->
+                    </div>
+                    <div class="modal-footer" id="report-modal-footer" style="padding: 12px 24px 16px; border-top: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: flex-end;">
+                        <button id="btn-download-pdf" class="btn btn-sm" onclick="downloadPdf()" style="opacity: 0.75; gap: 6px; font-size: 12px;">
+                            <i data-lucide="file-down" style="width: 14px; height: 14px;"></i> Exportar PDF
+                        </button>
                     </div>
                 </div>
             </div>

@@ -1,0 +1,26 @@
+# Triggers only — test logic lives in reusable-report-service-tests.yml
+name: Deploy Application
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-report-service:
+    uses: ./.github/workflows/reusable-report-service-tests.yml
+  test-ai-service:
+    uses: ./.github/workflows/reusable-ai-service-tests.yml
+  test-upload-service:
+    uses: ./.github/workflows/reusable-upload-service-tests.yml
+  deploy-app:
+    needs: [test-report-service, test-ai-service, test-upload-service]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy placeholder
+        run: |
+          echo "Deploying application..."
+          echo "TODO: Implement deployment logic"

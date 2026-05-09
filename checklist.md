@@ -3,7 +3,7 @@
 ## Infraestrutura
 - [ ] Utilizar Docker e/ou Kubernets
 - [ ] Criar pipeline CI/CD com: build, testes e deploy.
-- [ ] Utilizar [grafana loki](https://grafana.com/oss/loki/) para logs estruturados
+- [X] Utilizar [grafana loki](https://grafana.com/oss/loki/) para logs estruturados
 
 ## Arquitetura do Sistema
 
@@ -13,7 +13,7 @@
 - [x] Revisar comunicação entre o serviço de AI com a postgres, cada microsserviço deve ter sem BD próprio. Uma sugestão é publicar a mensagem no rabbit com o payload do que deve ser tratado, para evitar a comunicação do serviço de AI com o postgres e manter a separação
 - [X] Subir ambiente do minio para integrar nos serviços
 - [X] Atualizar código para  usar o blob storage, para armazenar os arquivos dos diagramas enviados. 
-- [ ] Criar testes automatizados (unitários)
+- [X] Criar testes automatizados (unitários)
 - [ ] Analisar a necessidade de utilizar um API gateway 
 
 ## Upload de arquivos
@@ -23,9 +23,8 @@
 - [X] Utilizar multi agentes com o [sdk da aws](https://strandsagents.com/docs/user-guide/concepts/multi-agent/swarm/) ou [langgraph aws](https://reference.langchain.com/python/langgraph-swarm)
 - [X] Usar baratinha para fazer OCR e um modelo mais robusto para analisar e gerar a sugestão da arquitetura
 - [ ] Refinar prompts da aplicação
-- [ ] Adicionar guardrails
-- [ ] Aplicar técnicas de alucinação
-- [ ] Criar RAG de livros ou artigos sobre arquitetura para o modelo consultar (?)
+- [X] Adicionar guardrails
+- [ ] Aplicar técnicas de antialucinação
 - [ ] Criar relatório com os seguintes pontos: Justificativa da abordagem escolhida;  Demonstração prática da análise; Discussão de limitações do modelo; Como a IA é acionada; Como o sistema trata falhas da IA; Como o resultado da IA é persistido; Como o relatório é gerado a partir da análise;
 
 ## Segurança
