@@ -51,10 +51,11 @@ spec:
           mountPath: /var/lib/rabbitmq
         readinessProbe:
           exec:
-            command: ["rabbitmq-diagnostics", "-q", "ping"]
-          initialDelaySeconds: 20
-          periodSeconds: 10
-          failureThreshold: 5
+            command: ["rabbitmq-diagnostics", "-q", "status"]
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 6
         resources:
           requests:
             memory: "256Mi"

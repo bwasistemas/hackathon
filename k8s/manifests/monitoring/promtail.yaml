@@ -53,7 +53,7 @@ spec:
       containers:
       - name: promtail
         image: grafana/promtail:3.3.2
-        args: ["-config.file=/etc/promtail/config.yaml"]
+        args: ["-config.file=/etc/promtail/promtail-config.yaml"]
         env:
         - name: HOSTNAME
           valueFrom:

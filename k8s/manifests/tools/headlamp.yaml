@@ -44,13 +44,12 @@ spec:
         - containerPort: 4466
         args:
         - "-in-cluster"
-        - "-base-url=/headlamp"
         readinessProbe:
           httpGet:
-            path: /headlamp
+            path: /
             port: 4466
           initialDelaySeconds: 10
-          periodSeconds: 10
+          periodSeconds: 15
           failureThreshold: 5
         resources:
           requests:
