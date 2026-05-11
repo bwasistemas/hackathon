@@ -6,7 +6,6 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from app.adapters.inbound.schemas import UploadResponse, UploadListItemSchema, UploadDetailSchema, Token
 from app.adapters.helpers.auth import create_access_token, verify_token
@@ -19,9 +18,6 @@ logger = logging.getLogger(__name__)
 
 # OAuth2 scheme – tokenUrl is the path used by Swagger UI to fetch tokens.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-# Rate limiter
-limiter = Limiter(key_func=get_remote_address)
 
 
 def get_upload_use_case(request: Request) -> UploadFileUseCase:
@@ -50,7 +46,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     return token_data.username
 
 
-def build_router(settings: Settings) -> APIRouter:
+def build_router(settings: Settings, limiter: Limiter) -> APIRouter:
     """Build and configure the HTTP router."""
     router = APIRouter()
 

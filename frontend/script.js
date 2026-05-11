@@ -164,6 +164,10 @@ function initializeApp() {
     if (btnCloseReportModal) {
         btnCloseReportModal.addEventListener('click', () => window.closeReportModal());
     }
+    const btnDownloadPdf = document.getElementById('btn-download-pdf');
+    if (btnDownloadPdf) {
+        btnDownloadPdf.addEventListener('click', () => window.downloadPdf());
+    }
 
     fetchAnalyses();
     if (pollingHandle) clearInterval(pollingHandle);
@@ -189,10 +193,23 @@ async function login(username, password) {
 
         if (!response.ok) {
             securityLogger.authAttempt(false, username);
-            const detail = response.status === 429
-                ? 'Muitas tentativas. Aguarde alguns segundos e tente novamente.'
-                : 'Credenciais inválidas';
-            throw new Error(detail);
+            if (response.status === 429) {
+                throw new Error('Muitas tentativas. Aguarde alguns segundos e tente novamente.');
+            }
+            if (response.status === 503) {
+                let msg = 'Autenticação indisponível no servidor (credenciais de admin não configuradas).';
+                try {
+                    const body = await response.json();
+                    if (body && body.detail) msg = String(body.detail);
+                } catch (_) { /* ignore */ }
+                throw new Error(msg);
+            }
+            let msg = 'Credenciais inválidas';
+            try {
+                const body = await response.json();
+                if (body && body.detail) msg = String(body.detail);
+            } catch (_) { /* ignore */ }
+            throw new Error(msg);
         }
 
         const data = await response.json();
@@ -559,6 +576,18 @@ window.closeReportModal = () => {
 window.downloadPdf = async () => {
     if (!currentReportId || !currentReportData) return;
 
+    const JsPDFCtor = window.jspdf
+        && (typeof window.jspdf.jsPDF === 'function'
+            ? window.jspdf.jsPDF
+            : typeof window.jspdf.default === 'function'
+              ? window.jspdf.default
+              : null);
+    if (!JsPDFCtor) {
+        showToast('Biblioteca de PDF não carregou (vendor/jspdf). Reconstrua o frontend e faça Ctrl+F5.', 'error');
+        securityLogger.error('jsPDF missing', { keys: window.jspdf ? Object.keys(window.jspdf) : [] });
+        return;
+    }
+
     const btn = document.getElementById('btn-download-pdf');
     const originalHtml = btn.innerHTML;
     btn.innerHTML = '<i data-lucide="loader" class="animate-spin" style="width:14px;height:14px;"></i>';
@@ -566,8 +595,12 @@ window.downloadPdf = async () => {
     lucide.createIcons();
 
     try {
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+        let doc;
+        try {
+            doc = new JsPDFCtor({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        } catch (e) {
+            doc = new JsPDFCtor('p', 'mm', 'a4');
+        }
         const pageW = 210, pageH = 297, margin = 20;
         const contentW = pageW - margin * 2;
         let y = 0;
@@ -746,7 +779,9 @@ window.downloadPdf = async () => {
 
         // ── ANEXO ORIGINAL (ultima pagina) ───────────────────────────
         try {
-            const attachRes = await fetch(`/api/v1/reports/${currentReportId}/attachment`);
+            const attachRes = await apiFetch(
+                `/report-service/reports/${encodeURIComponent(currentReportId)}/attachment`,
+            );
             if (attachRes.ok) {
                 const ct = attachRes.headers.get('content-type') || '';
                 if (ct.startsWith('image/')) {
@@ -764,7 +799,20 @@ window.downloadPdf = async () => {
                     doc.setTextColor(237, 20, 91);
                     doc.text(`Arquivo Original: ${data.filename || ''}`, margin, 12);
                     const format = ct.includes('png') ? 'PNG' : 'JPEG';
-                    doc.addImage(imgDataUrl, format, margin, 22, contentW, 0);
+                    let imgW = contentW;
+                    let imgH = 0;
+                    try {
+                        const props = doc.getImageProperties(imgDataUrl);
+                        if (props && props.width > 0) {
+                            imgH = (props.height * imgW) / props.width;
+                        }
+                    } catch (_) {
+                        imgH = 0;
+                    }
+                    if (!imgH || !Number.isFinite(imgH)) {
+                        imgH = 120;
+                    }
+                    doc.addImage(imgDataUrl, format, margin, 22, imgW, imgH);
                 }
             }
         } catch (_) { /* skip silently */ }
@@ -854,6 +902,7 @@ const servicesCategories = [
                 desc: 'Banco de dados relacional principal.',
                 port: 5432,
                 healthPath: '/report-service/health/db',
+                requiresAuth: true,
             },
         ],
     },
@@ -861,18 +910,46 @@ const servicesCategories = [
         title: 'Monitoramento',
         icon: 'activity',
         items: [
-            { name: 'Grafana', desc: 'Dashboard de monitoramento com métricas (Prometheus) e logs estruturados (Loki).', port: 3000, url: 'http://localhost:3000', color: '#F46800', imgUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/grafana/grafana-original.svg' },
-            { name: 'Prometheus', desc: 'Motor de coleta e processamento de métricas em tempo real.', port: 9090, url: 'http://localhost:9090', color: '#E6522C', imgUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/prometheus/prometheus-original.svg' },
-            { name: 'Loki', desc: 'Agregador de logs estruturados dos microsserviços (JSON). Acessível via Grafana.', port: 3100, url: 'http://localhost:3000/d/arch-logs', color: '#F46800', imgUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/grafana/grafana-original.svg' }
-        ]
+            {
+                name: 'Grafana',
+                desc: 'Dashboard de monitoramento com métricas (Prometheus) e logs estruturados (Loki).',
+                port: 3000,
+                healthPath: '/infra-health/grafana',
+                externalUrl: 'http://localhost:3000',
+                color: '#F46800',
+                imgUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/grafana/grafana-original.svg',
+            },
+            {
+                name: 'Prometheus',
+                desc: 'Motor de coleta e processamento de métricas em tempo real.',
+                port: 9090,
+                healthPath: '/infra-health/prometheus',
+                externalUrl: 'http://localhost:9090',
+                color: '#E6522C',
+                imgUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/prometheus/prometheus-original.svg',
+            },
+            {
+                name: 'Loki',
+                desc: 'Agregador de logs estruturados dos microsserviços (JSON). Acessível via Grafana.',
+                port: 3100,
+                healthPath: '/infra-health/loki',
+                externalUrl: 'http://localhost:3000/d/arch-logs',
+                color: '#F46800',
+                imgUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/grafana/grafana-original.svg',
+            },
+        ],
     }
 ];
 
-async function probe(url) {
+async function probe(url, { useAuth = false } = {}) {
     try {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), 2000);
-        const res = await fetch(url, { signal: controller.signal });
+        const headers = new Headers();
+        if (useAuth && authToken) {
+            headers.set('Authorization', `Bearer ${authToken}`);
+        }
+        const res = await fetch(url, { signal: controller.signal, headers });
         clearTimeout(id);
         return res.ok;
     } catch {
@@ -890,7 +967,7 @@ async function loadServices() {
         for (const s of group.items) {
             let isOnline = false;
             if (s.healthPath) {
-                isOnline = await probe(s.healthPath);
+                isOnline = await probe(s.healthPath, { useAuth: !!s.requiresAuth });
             } else if (s.externalUrl) {
                 isOnline = await probe(s.externalUrl);
             }

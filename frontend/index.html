@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ArchiAnalyzer - Comando Central</title>
     <!-- Fontes locais via system stack (styles.css) — evita CSP font-src para Google Fonts -->
-    <link rel="stylesheet" href="styles.css?v=4">
+    <link rel="stylesheet" href="styles.css?v=5">
     <!-- Pin Lucide to a specific version (avoids supply-chain risk from @latest).
          When upgrading, also refresh the SRI hash via:
            openssl dgst -sha384 -binary lucide.min.js | openssl base64 -A -->
@@ -13,9 +13,9 @@
         src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"
         crossorigin="anonymous"
         referrerpolicy="no-referrer"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- Tipografia: só system stack (styles.css). Sem Google/Adobe no DOM — evita CSP font-src e pedidos a use.typekit.net. -->
+    <!-- jsPDF: arquivo local (mesma origem) — não depende de CDN nem CORS no script. -->
+    <script src="vendor/jspdf.umd.min.js?v=2.5.1"></script>
 </head>
 <body>
     <div class="bg-gradient"></div>
@@ -271,7 +271,7 @@
                         <!-- Loaded dynamically -->
                     </div>
                     <div class="modal-footer" id="report-modal-footer" style="padding: 12px 24px 16px; border-top: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: flex-end;">
-                        <button id="btn-download-pdf" class="btn btn-sm" onclick="downloadPdf()" style="opacity: 0.75; gap: 6px; font-size: 12px;">
+                        <button type="button" id="btn-download-pdf" class="btn btn-sm btn-download-pdf" style="opacity: 0.75; gap: 6px; font-size: 12px;">
                             <i data-lucide="file-down" style="width: 14px; height: 14px;"></i> Exportar PDF
                         </button>
                     </div>
@@ -285,6 +285,6 @@
     <div id="toast-container" class="toast-container"></div>
 
     <script src="security-logger.js?v=3"></script>
-    <script src="script.js?v=13"></script>
+    <script src="script.js?v=14"></script>
 </body>
 </html>

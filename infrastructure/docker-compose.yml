@@ -20,8 +20,25 @@ services:
       timeout: 5s
       retries: 5
 
+  postgres-exporter:
+    # Docker Hub (prometheuscommunity/postgres-exporter); evite quay + tags inexistentes (ex.: v0.15.1)
+    image: prometheuscommunity/postgres-exporter:v0.13.1
+    container_name: arch-analyzer-postgres-exporter
+    environment:
+      # Senhas com caracteres especiais na URL exigem encoding em DATA_SOURCE_NAME.
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}?sslmode=disable"
+    networks:
+      - arch-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   rabbitmq:
-    image: rabbitmq:3.13-management-alpine
+    build:
+      context: ./rabbitmq
+      dockerfile: Dockerfile
+    image: arch-analyzer-rabbitmq:3.13-management
     container_name: arch-analyzer-rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-fiap}
@@ -29,6 +46,8 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+      # Endpoint rabbitmq_prometheus (scrape em rabbitmq:15692)
+      - "15692:15692"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
@@ -82,8 +101,8 @@ services:
       - MINIO_REGION=${MINIO_REGION:-us-east-1}
       - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
       - SERVICE_NAME=upload-service
-      # Shared JWT signing key (must match ai-service & report-service)
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      # Shared JWT signing key (must match ai-service & report-service; set in .env)
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_missing_see_infrastructure_.env.example}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       - ADMIN_USER=${ADMIN_USER}
@@ -133,7 +152,7 @@ services:
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
       # Shared JWT verification key (must match upload-service)
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_missing_see_infrastructure_.env.example}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8051}
     volumes:
@@ -172,7 +191,7 @@ services:
       - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
       - SERVICE_NAME=report-service
       # Shared JWT verification key (must match upload-service)
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_missing_see_infrastructure_.env.example}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8051}
     depends_on:
@@ -221,6 +240,9 @@ services:
       - prometheus_data:/prometheus
     networks:
       - arch-network
+    depends_on:
+      postgres-exporter:
+        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]

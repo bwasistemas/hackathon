@@ -1,11 +1,14 @@
 """PostgreSQL (asyncpg) adapter for report and feedback persistence."""
 import json
+import logging
 from typing import Optional, List
 
 import asyncpg
 
 from app.application.ports import ReportRepositoryPort, FeedbackRepositoryPort
 from app.domain.models import Report, ReportSummary, Statistics
+
+logger = logging.getLogger(__name__)
 
 
 def parse_asyncpg_dsn(database_url: str) -> dict:
@@ -46,7 +49,8 @@ class AsyncpgReportRepository(ReportRepositoryPort):
             if row["file_path"]:
                 try:
                     analysis = json.loads(row["file_path"])
-                except:
+                except json.JSONDecodeError:
+                    logger.warning("Upload %s contains a non-JSON payload in file_path", upload_id)
                     analysis = {"raw": row["file_path"]}
             
             return Report(
@@ -197,5 +201,5 @@ async def create_repositories(
             pool,
         )
     except Exception as e:
-        print(f"DB Error: {e}")
+        logger.exception("Failed to initialize report repositories")
         return NullReportRepository(), NullFeedbackRepository(), None

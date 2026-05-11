@@ -93,7 +93,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8004
 ## Endpoints
 
 - `GET /health` - Health check
-- `GET /health/db` - Database health check
+- `GET /health/db` - Database health check (**JWT obrigatório**, mesmo emissor que `/reports`)
 - `GET /reports/{upload_id}` - Obter relatorio por ID
 - `GET /reports` - Listar relatorios
 - `POST /feedback` - Submeter feedback

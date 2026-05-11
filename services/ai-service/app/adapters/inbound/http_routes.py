@@ -5,7 +5,6 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from app.adapters.inbound.schemas import AnalysisResponse, AnalyzeRequest, ComponentSchema, RiskSchema
 from app.adapters.helpers.auth import verify_token
@@ -14,8 +13,6 @@ from app.domain.exceptions import LlmAnalysisError, LlmNotConfiguredError
 from app.config import Settings
 
 logger = logging.getLogger(__name__)
-
-limiter = Limiter(key_func=get_remote_address)
 
 # OAuth2 scheme: this service does NOT issue tokens. Clients must obtain a JWT
 # from the upload-service `/token` endpoint and present it here.
@@ -37,7 +34,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     return token_data.username
 
 
-def build_router(settings: Settings) -> APIRouter:
+def build_router(settings: Settings, limiter: Limiter) -> APIRouter:
     router = APIRouter()
 
     @router.get("/health")

@@ -102,6 +102,6 @@ def create_app() -> FastAPI:
         max_age=600,
     )
 
-    app.include_router(build_router())
+    app.include_router(build_router(limiter))
 
     return app

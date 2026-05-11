@@ -1,27 +1,29 @@
 """PostgreSQL (asyncpg) adapter for upload status and AI payload."""
 import json
+import logging
 from typing import Optional
+from urllib.parse import urlparse
 
 import asyncpg
 
 from app.application.ports import UploadRepositoryPort
 
+logger = logging.getLogger(__name__)
+
 
 def parse_asyncpg_dsn(database_url: str) -> dict:
     """Turn postgresql+asyncpg://user:pass@host:port/db into asyncpg kwargs."""
-    db_url = database_url.replace("postgresql+asyncpg://", "")
-    user_part, rest = db_url.split("@", 1)
-    user = user_part.split(":")[0]
-    password = ":".join(user_part.split(":")[1:])
-    host_port_db = rest
-    host_port, db = host_port_db.rsplit("/", 1)
-    host, port = host_port.rsplit(":", 1)
+    parsed = urlparse(database_url)
+    if parsed.scheme not in {"postgresql+asyncpg", "postgresql"}:
+        raise ValueError("Invalid DSN scheme. Expected postgresql+asyncpg:// or postgresql://")
+    if not parsed.username or not parsed.password or not parsed.hostname or not parsed.path:
+        raise ValueError("Invalid DSN. Must include username, password, host, and database name.")
     return {
-        "host": host,
-        "port": int(port),
-        "user": user,
-        "password": password,
-        "database": db,
+        "host": parsed.hostname,
+        "port": parsed.port or 5432,
+        "user": parsed.username,
+        "password": parsed.password,
+        "database": parsed.path.lstrip("/"),
     }
 
 
@@ -93,5 +95,5 @@ async def create_upload_repository(
         )
         return AsyncpgUploadRepository(pool), pool
     except Exception as e:
-        print(f"DB Error: {e}")
+        logger.exception("Failed to initialize upload status repository")
         return NullUploadRepository(), None

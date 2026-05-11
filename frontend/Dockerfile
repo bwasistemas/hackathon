@@ -12,6 +12,7 @@ COPY styles.css          /usr/share/nginx/html/
 COPY script.js           /usr/share/nginx/html/
 COPY security-logger.js  /usr/share/nginx/html/
 COPY fiap-png.png        /usr/share/nginx/html/
+COPY vendor/             /usr/share/nginx/html/vendor/
 
 # Expose port 8051
 EXPOSE 8051

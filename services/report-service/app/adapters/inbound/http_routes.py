@@ -1,13 +1,12 @@
 """FastAPI inbound adapter: maps HTTP <-> application use cases."""
 import logging
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, status
+from fastapi.responses import Response
 from fastapi.security import OAuth2PasswordBearer
 from slowapi import Limiter
-from slowapi.util import get_remote_address
-import os
-from fastapi.responses import Response
 
 from app.adapters.inbound.schemas import (
     FeedbackRequest,
@@ -36,9 +35,6 @@ logger = logging.getLogger(__name__)
 # Clients must obtain tokens from the upload-service `/token` endpoint, which is
 # the single source of authentication for the platform.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/upload-service/token", auto_error=True)
-
-# Rate limiter
-limiter = Limiter(key_func=get_remote_address)
 
 
 def get_get_report_use_case(request: Request) -> GetReportUseCase:
@@ -72,7 +68,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     return token_data.username
 
 
-def build_router() -> APIRouter:
+def build_router(limiter: Limiter) -> APIRouter:
     """Build and configure the HTTP router."""
     router = APIRouter()
 
@@ -82,8 +78,13 @@ def build_router() -> APIRouter:
         return {"status": "healthy", "service": "report-service"}
 
     @router.get("/health/db")
-    async def health_db(request: Request):
-        """Database health check endpoint."""
+    async def health_db(
+        request: Request,
+        current_user: str = Depends(get_current_user),
+    ):
+        """Database health check (requires JWT — avoids leaking DB availability to anonymous clients)."""
+        client_ip = request.client.host if request.client else "unknown"
+        logger.debug("DB health probe by %s from %s", current_user, client_ip)
         try:
             if request.app.state.db_pool:
                 async with request.app.state.db_pool.acquire() as conn:
@@ -130,9 +131,12 @@ def build_router() -> APIRouter:
     async def get_attachment(
         upload_id: str,
         request: Request,
+        current_user: str = Depends(get_current_user),
         use_case: GetReportUseCase = Depends(get_get_report_use_case),
     ):
-        """Stream the original uploaded file from MinIO."""
+        """Stream the original uploaded file from MinIO (requires the same JWT as other report APIs)."""
+        client_ip = request.client.host if request.client else "unknown"
+        logger.info(f"Attachment download by user {current_user} from {client_ip}: {upload_id}")
         minio_storage = getattr(request.app.state, "minio_storage", None)
         if not minio_storage:
             raise HTTPException(status_code=503, detail="Storage unavailable")

@@ -5,14 +5,19 @@ from pydantic import BaseModel, SecretStr
 
 logger = logging.getLogger(__name__)
 
-_INSECURE_JWT_DEFAULT = "your-secret-key-here-change-in-production"
+_INSECURE_JWT_VALUES = frozenset(
+    {
+        "your-secret-key-here-change-in-production",
+        "replace-with-a-64-char-random-string",
+    }
+)
 
 
 def _require_jwt_secret() -> str:
     """The ai-service does not issue tokens, but it MUST share the same secret
     as the upload-service in order to validate them."""
     secret = os.getenv("JWT_SECRET_KEY", "").strip()
-    if not secret or secret == _INSECURE_JWT_DEFAULT:
+    if not secret or secret in _INSECURE_JWT_VALUES:
         raise RuntimeError(
             "JWT_SECRET_KEY is not set or still uses the insecure default. "
             "It must match the value configured on the upload-service."

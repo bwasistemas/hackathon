@@ -5,9 +5,14 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-# Sentinel value used by the .env.example file. If this leaks into runtime it
-# means the operator never rotated the secret – we refuse to start.
-_INSECURE_JWT_DEFAULT = "your-secret-key-here-change-in-production"
+# Sentinel values from examples. If these leak into runtime the operator never
+# rotated the secret – we refuse to start.
+_INSECURE_JWT_VALUES = frozenset(
+    {
+        "your-secret-key-here-change-in-production",
+        "replace-with-a-64-char-random-string",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -33,7 +38,7 @@ class Settings:
 
 def _require_jwt_secret() -> str:
     secret = os.getenv("JWT_SECRET_KEY", "").strip()
-    if not secret or secret == _INSECURE_JWT_DEFAULT:
+    if not secret or secret in _INSECURE_JWT_VALUES:
         raise RuntimeError(
             "JWT_SECRET_KEY is not set or still uses the insecure default. "
             "Generate a strong key (e.g. `python -c \"import secrets; "

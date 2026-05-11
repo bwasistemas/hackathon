@@ -2,8 +2,6 @@
 from __future__ import annotations
 import re
 
-from strands import Agent
-
 import asyncio
 import base64
 import io

@@ -42,7 +42,7 @@ class ProcessDiagramUploadUseCase:
             if file_path.startswith("minio://") and self._storage:
                 local_file_path = await self._storage.download_file(file_path)
                 temp_file_to_cleanup = local_file_path
-                print(f"Downloaded from MinIO: {file_path} -> {local_file_path}")
+                logger.info("Downloaded from MinIO: %s -> %s", file_path, local_file_path)
 
             # Validate file
             self._validate_file(local_file_path)
@@ -82,7 +82,7 @@ class ProcessDiagramUploadUseCase:
                 try:
                     os.unlink(temp_file_to_cleanup)
                 except Exception as e:
-                    print(f"Failed to cleanup temp file {temp_file_to_cleanup}: {e}")
+                    logger.warning("Failed to cleanup temp file %s: %s", temp_file_to_cleanup, e)
 
     def _validate_file(self, file_path: str) -> None:
         # Validate extension
