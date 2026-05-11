@@ -34,7 +34,7 @@ class Settings(BaseModel):
 def load_settings() -> Settings:
     return Settings(
         openai_api_key=os.getenv("OPENAI_API_KEY", ""),
-        openai_base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        openai_base_url=os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
         llm_model=os.getenv("LLM_MODEL", "deepseek/deepseek-v3.2"),
         llm_ocr=os.getenv("LLM_OCR", "google/gemma-4-26b-a4b-it:free"),
         database_url=os.getenv(

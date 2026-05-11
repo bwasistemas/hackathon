@@ -1,0 +1,7 @@
+# Dependencies for the standalone Ragas evaluation script
+# (tests/ragas_eval/evals.py). Kept separate from requirements-dev.txt so the
+# unit-test environment does not pull these heavier libraries.
+
+ragas==0.4.3
+datasets==4.8.5
+python-dotenv==1.0.1
