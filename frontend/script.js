@@ -603,6 +603,11 @@ window.downloadPdf = async () => {
         }
         const pageW = 210, pageH = 297, margin = 20;
         const contentW = pageW - margin * 2;
+        const innerPad = 5;
+        const innerTextW = contentW - innerPad * 2;
+        const cardCorner = 1.5;
+        const sectionGap = 4;
+        const footerSafeY = pageH - 15;
         let y = 0;
 
         const data = currentReportData;
@@ -635,25 +640,27 @@ window.downloadPdf = async () => {
             if (y + needed > pageH - 15) { doc.addPage(); y = 20; }
         };
 
-        const sectionTitle = (title) => {
-            checkPage(18);
+        const sectionTitle = (title, opts = {}) => {
+            const fontSize = opts.fontSize ?? 12;
+            const afterRule = opts.afterRule ?? 6;
+            checkPage(14 + fontSize);
             doc.setFont('helvetica', 'bold');
-            doc.setFontSize(12);
+            doc.setFontSize(fontSize);
             doc.setTextColor(237, 20, 91);
             doc.text(title, margin, y);
             y += 2;
             doc.setDrawColor(237, 20, 91);
-            doc.setLineWidth(0.3);
+            doc.setLineWidth(0.25);
             doc.line(margin, y, pageW - margin, y);
-            y += 6;
+            y += afterRule;
         };
 
         const bodyText = (text) => {
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(10);
             doc.setTextColor(50, 55, 75);
-            const lines = doc.splitTextToSize(text || '', contentW);
-            lines.forEach(line => { checkPage(6); doc.text(line, margin, y); y += 5.5; });
+            const lines = doc.splitTextToSize(text || '', innerTextW);
+            lines.forEach(line => { checkPage(6); doc.text(line, margin + innerPad, y); y += 5.5; });
             y += 2;
         };
 
@@ -662,44 +669,44 @@ window.downloadPdf = async () => {
         bodyText(r.summary || 'Sem resumo disponivel.');
 
         // ── COMPONENTES ─────────────────────────────────────────────
-        y += 4;
+        y += sectionGap;
         sectionTitle('Componentes Identificados');
         const components = r.components || [];
         if (!components.length) {
             bodyText('Nenhum componente identificado.');
         } else {
             components.forEach(c => {
-                const descLines = doc.splitTextToSize(c.description || '', contentW - 6);
+                const descLines = doc.splitTextToSize(c.description || '', innerTextW);
                 const boxH = 8 + descLines.length * 5 + 3;
-                checkPage(boxH + 4);
+                checkPage(boxH + sectionGap);
 
                 doc.setFillColor(246, 248, 252);
                 doc.setDrawColor(215, 222, 235);
                 doc.setLineWidth(0.2);
-                doc.roundedRect(margin, y - 4, contentW, boxH, 1.5, 1.5, 'FD');
+                doc.roundedRect(margin, y - 4, contentW, boxH, cardCorner, cardCorner, 'FD');
 
                 doc.setFont('helvetica', 'bold');
                 doc.setFontSize(10);
                 doc.setTextColor(30, 41, 59);
-                doc.text(c.name || '', margin + 3, y + 1);
+                doc.text(c.name || '', margin + innerPad, y + 1);
 
                 const nameW = doc.getTextWidth(c.name || '') + 2;
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(8.5);
                 doc.setTextColor(100, 116, 139);
-                doc.text(`(${c.type || ''})`, margin + 3 + nameW, y + 1);
+                doc.text(`(${c.type || ''})`, margin + innerPad + nameW, y + 1);
 
                 y += 6;
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(9);
                 doc.setTextColor(71, 85, 105);
-                descLines.forEach(line => { doc.text(line, margin + 3, y); y += 5; });
-                y += 4;
+                descLines.forEach(line => { doc.text(line, margin + innerPad, y); y += 5; });
+                y += sectionGap;
             });
         }
 
         // ── RISCOS ──────────────────────────────────────────────────
-        y += 4;
+        y += sectionGap;
         sectionTitle('Riscos Arquiteturais');
         const risks = r.risks || [];
         if (!risks.length) {
@@ -707,74 +714,129 @@ window.downloadPdf = async () => {
         } else {
             risks.forEach(risk => {
                 const severity = (risk.severity || '').toUpperCase();
-                const descLines = doc.splitTextToSize(risk.description || '', contentW - 16);
-                const recLines = doc.splitTextToSize(risk.recommendation || '', contentW - 8);
-                const boxH = 9 + descLines.length * 5 + (recLines.length ? recLines.length * 4.5 + 9 : 0) + 4;
-                checkPage(boxH + 4);
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9.5);
+                const descLines = doc.splitTextToSize(risk.description || '', innerTextW);
+                doc.setFontSize(8.5);
+                const recLines = doc.splitTextToSize(risk.recommendation || '', innerTextW);
+
+                const rowBadge = 5;
+                const rowDesc = 5;
+                const rowRec = 4.5;
+                const padTop = 5;
+                const padBottom = 6;
+                const gapDescRec = 4;
+                let recBlock = 0;
+                if (recLines.length) {
+                    recBlock = gapDescRec + 5 + recLines.length * rowRec;
+                }
+                const boxH = padTop + rowBadge + descLines.length * rowDesc + recBlock + padBottom;
+                checkPage(boxH + 8);
 
                 let accent = [16, 185, 129];
                 if (['HIGH','CRITICAL'].includes(severity)) accent = [239, 68, 68];
                 else if (severity === 'MEDIUM') accent = [234, 179, 8];
 
-                doc.setFillColor(249, 250, 252);
-                doc.setDrawColor(...accent);
-                doc.setLineWidth(0.4);
-                doc.rect(margin, y - 4, contentW, boxH, 'FD');
-                doc.setFillColor(...accent);
-                doc.rect(margin, y - 4, 2.5, boxH, 'F');
+                const boxTop = y - 4;
+                const boxBottom = boxTop + boxH;
 
+                doc.setFillColor(246, 248, 252);
+                doc.setDrawColor(...accent);
+                doc.setLineWidth(0.25);
+                doc.roundedRect(margin, boxTop, contentW, boxH, cardCorner, cardCorner, 'FD');
+                doc.setFillColor(...accent);
+                doc.rect(margin, boxTop, 2.5, boxH, 'F');
+
+                let cy = y + 1;
                 doc.setFont('helvetica', 'bold');
                 doc.setFontSize(9);
                 doc.setTextColor(...accent);
-                doc.text(`[${severity}]`, margin + 5, y + 1);
-                const badgeW = doc.getTextWidth(`[${severity}]`) + 2;
+                doc.text(`[${severity}]`, margin + innerPad, cy);
+                cy += rowBadge;
 
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(9.5);
                 doc.setTextColor(30, 41, 59);
-                descLines.forEach((line, i) => {
-                    if (i === 0) doc.text(line, margin + 5 + badgeW, y + 1);
-                    else { y += 5; doc.text(line, margin + 5, y + 1); }
+                descLines.forEach(line => {
+                    checkPage(rowDesc + 2);
+                    doc.text(line, margin + innerPad, cy);
+                    cy += rowDesc;
                 });
-                y += 7;
 
                 if (recLines.length) {
+                    cy += gapDescRec;
                     doc.setFont('helvetica', 'bold');
                     doc.setFontSize(8.5);
-                    doc.setTextColor(16, 185, 129);
-                    doc.text('Recomendacao:', margin + 5, y);
-                    y += 5;
+                    doc.setTextColor(...accent);
+                    doc.text('Recomendacao:', margin + innerPad, cy);
+                    cy += 5;
                     doc.setFont('helvetica', 'normal');
                     doc.setFontSize(8.5);
                     doc.setTextColor(71, 85, 105);
-                    recLines.forEach(line => { checkPage(5); doc.text(line, margin + 5, y); y += 4.5; });
+                    recLines.forEach(line => {
+                        checkPage(rowRec + 2);
+                        doc.text(line, margin + innerPad, cy);
+                        cy += rowRec;
+                    });
                 }
-                y += 6;
+
+                y = Math.max(cy + padBottom - 2, boxBottom + 5);
             });
         }
 
-        // ── TEXTO BRUTO OCR ─────────────────────────────────────────
+        // ── TEXTO BRUTO OCR (fundo claro, sem bloco preto) ──────────
         if (rawText) {
-            y += 4;
+            y += sectionGap + 2;
+            checkPage(35);
             sectionTitle('Texto Bruto Extraido (OCR)');
-            checkPage(20);
-            const rawLines = doc.splitTextToSize(rawText, contentW - 8);
-            const visibleLines = rawLines.slice(0, 80);
-            const boxH = visibleLines.length * 4.5 + 8;
-            checkPage(Math.min(boxH, 50));
-            doc.setFillColor(18, 18, 18);
-            doc.setDrawColor(237, 20, 91);
-            doc.setLineWidth(0.3);
-            doc.rect(margin, y - 3, contentW, Math.min(boxH, pageH - y - 20), 'FD');
+
             doc.setFont('courier', 'normal');
             doc.setFontSize(7);
-            doc.setTextColor(210, 210, 215);
-            visibleLines.forEach(line => {
-                if (y + 4.5 > pageH - 18) { doc.addPage(); y = 20; doc.setFillColor(18, 18, 18); doc.rect(margin, y - 3, contentW, 80, 'F'); }
-                doc.text(line, margin + 3, y);
-                y += 4.5;
-            });
-            y += 8;
+            const normalizedRaw = String(rawText).replace(/\r\n/g, '\n').replace(/\r/g, '');
+            const rawLines = doc.splitTextToSize(normalizedRaw, innerTextW);
+            const lineH = 4.5;
+            const ocrBoxPadY = 4;
+
+            let idx = 0;
+            while (idx < rawLines.length) {
+                if (y + ocrBoxPadY + lineH > footerSafeY) {
+                    doc.addPage();
+                    y = 20;
+                    sectionTitle('Texto Bruto Extraido (OCR) (continuacao)', { fontSize: 11, afterRule: 5 });
+                }
+
+                const boxTop = y;
+                let baseline = boxTop + ocrBoxPadY;
+                const startIdx = idx;
+                while (idx < rawLines.length && baseline + lineH <= footerSafeY) {
+                    idx++;
+                    baseline += lineH;
+                }
+                const linesInBox = idx - startIdx;
+                if (linesInBox === 0) {
+                    doc.addPage();
+                    y = 20;
+                    sectionTitle('Texto Bruto Extraido (OCR) (continuacao)', { fontSize: 11, afterRule: 5 });
+                    continue;
+                }
+
+                const boxH = linesInBox * lineH + ocrBoxPadY * 2;
+                doc.setFillColor(246, 248, 252);
+                doc.setDrawColor(215, 222, 235);
+                doc.setLineWidth(0.2);
+                doc.roundedRect(margin, boxTop, contentW, boxH, cardCorner, cardCorner, 'FD');
+
+                doc.setFont('courier', 'normal');
+                doc.setFontSize(7);
+                doc.setTextColor(30, 41, 59);
+                baseline = boxTop + ocrBoxPadY;
+                for (let k = 0; k < linesInBox; k++) {
+                    doc.text(rawLines[startIdx + k], margin + innerPad, baseline);
+                    baseline += lineH;
+                }
+                y = boxTop + boxH + sectionGap;
+            }
         }
 
         // ── ANEXO ORIGINAL (ultima pagina) ───────────────────────────
