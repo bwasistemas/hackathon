@@ -5,6 +5,7 @@ pydantic==2.12.5
 openai==1.68.0
 httpx==0.28.0
 python-dotenv==1.0.1
+python-multipart==0.0.9
 
 pillow
 pytesseract
@@ -14,13 +15,13 @@ aiohttp
 pdf2image
 prometheus-fastapi-instrumentator==7.0.0
 
-strands-agents==1.33.0
-strands-agents-tools==0.3.0
-aiobotocore
-botocore
-
 tiktoken
 python-magic
 slowapi
 tenacity
 PyPDF2
+PyJWT==2.8.0
+passlib[bcrypt]>=1.7.4
+python-jose[cryptography]>=3.3.0
+aiobotocore
+botocore

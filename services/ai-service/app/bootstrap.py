@@ -12,6 +12,18 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
 from app.adapters.inbound.http_routes import build_router
 from app.adapters.inbound.rabbitmq_consumer import (
     connect_rabbitmq,
@@ -24,6 +36,7 @@ from app.adapters.outbound.llm_ocr import LlmOCRAdapter
 from app.application.analyze_diagram import AnalyzeDiagramUseCase
 from app.application.process_diagram_upload import ProcessDiagramUploadUseCase
 from app.config import load_settings
+from app.logging_config import setup_logging
 
 
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
@@ -53,6 +66,9 @@ def _rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
 
 def create_app() -> FastAPI:
     settings = load_settings()
+    
+    # Setup logging
+    setup_logging("ai-service")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -60,7 +76,7 @@ def create_app() -> FastAPI:
         app.state.db_pool = db_pool
         multi_agents = build_multi_agents()
         llm = SwarmLlmAdapter(multi_agents)
-        ocr = LlmOCRAdapter()
+        ocr = LlmOCRAdapter(settings=settings)
         storage = MinIOStorage(settings)
 
         app.state.analyze_use_case = AnalyzeDiagramUseCase(llm)
@@ -101,16 +117,24 @@ def create_app() -> FastAPI:
     # Request size limit
     app.add_middleware(RequestSizeLimitMiddleware, max_size=50_000_000)
 
-    # CORS restricted
+    # Security headers
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    # CORS restricted to known frontend origins only.
+    raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8051")
+    allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
+    if "*" in allowed_origins:
+        allowed_origins = ["http://localhost:8051"]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(","),
-        allow_credentials=False,  # Don't need credentials for API
-        allow_methods=["POST"],   # Only allow POST to /analyze
-        allow_headers=["Content-Type", "X-API-Key"],
-        max_age=600,  # Cache preflight for 10 min
+        allow_origins=allowed_origins,
+        allow_credentials=False,
+        allow_methods=["POST"],
+        allow_headers=["Content-Type", "Authorization"],
+        max_age=600,
     )
 
-    app.include_router(build_router())
+    app.include_router(build_router(settings, limiter))
 
     return app

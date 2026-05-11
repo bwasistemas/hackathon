@@ -1,116 +1,63 @@
-# Arch Analyzer - Frontend
+# Arch Analyzer — Frontend
 
-Frontend em Streamlit para o sistema de análise automatizada de diagramas de arquitetura.
+SPA estática servida por **Nginx** na porta **8051**. O painel faz login no `upload-service`, obtém um JWT e chama as APIs dos microsserviços através do proxy na **mesma origem** (evita CORS e mantém o token só no browser).
 
 ## Estrutura
 
 ```
 frontend/
-├── app.py                    # Entry point principal
-├── pages/
-│   ├── 1_upload.py           # Tela de upload
-│   ├── 2_dashboard.py        # Dashboard de acompanhamento
-│   └── 3_report.py           # Relatório + Feedback
-├── services/
-│   └── api_client.py         # Cliente HTTP para API
-├── components/
-│   └── status_badge.py       # Componente de status
-├── .streamlit/
-│   └── config.toml           # Configuração do tema
-├── requirements.txt
-├── Dockerfile
+├── index.html           # Shell da aplicação
+├── script.js            # Lógica (auth, upload, dashboard, relatório)
+├── styles.css           # Estilos
+├── security-logger.js   # Hooks de logging (segurança)
+├── fiap-png.png         # Asset
+├── nginx.conf           # Proxy para upload / ai / report + CSP
+├── Dockerfile           # Imagem nginx:alpine
 └── README.md
 ```
 
-## Quick Start
+## Quick start
 
-### 1. Instalação local
+### Local (só arquivos estáticos)
 
-```bash
-cd frontend
-pip install -r requirements.txt
+Sirva a pasta com um servidor HTTP qualquer **ou** use o stack completo via Docker Compose em `infrastructure/` (recomendado), para que `/upload-service`, `/ai-service` e `/report-service` existam como rotas proxy.
 
-# Configure a URL do backend
-export BACKEND_URL=http://localhost:8001
-
-# Execute
-streamlit run app.py
-```
-
-### 2. Docker
+### Docker (imagem frontend)
 
 ```bash
 cd frontend
 docker build -t arch-analyzer-frontend .
-docker run -p 8501:8501 \
-  -e BACKEND_URL=http://localhost:8001 \
-  arch-analyzer-frontend
+docker run -p 8051:8051 arch-analyzer-frontend
 ```
 
-## Funcionalidades
+Sem o Compose, o proxy do `nginx.conf` não terá os hostnames `upload-service`, `ai-service`, etc., então as chamadas à API falharão fora da rede do projeto.
 
-### 📤 Upload
-- Upload de imagens (PNG, JPG, JPEG) e PDFs
-- Pré-visualização do arquivo
-- Validação de tamanho (máx. 10MB)
-- Status imediato após envio
+## Variáveis
 
-### 📊 Dashboard
-- Lista de todas as análises
-- Métricas em tempo real
-- Filtros por status
-- Auto-refresh (5 segundos)
-- Badges coloridos por status
+Esta camada **não** usa `BACKEND_URL`: as URLs são relativas ao host (ex.: `/upload-service/token`). O Compose sobe o frontend na mesma rede dos microsserviços e o Nginx encaminha para os serviços internos.
 
-### 📄 Relatório
-- Visualização completa do relatório
-- Componentes identificados
-- Riscos arquiteturais
-- Recomendações
-- Exportação (JSON/Markdown)
-- Sistema de feedback (1-5 estrelas)
+## API (via proxy, mesma origem)
 
-## Variáveis de Ambiente
+Todas as rotas abaixo passam pelo Nginx em `8051`. Endpoints de negócio (exceto `/health` simples e login) exigem cabeçalho `Authorization: Bearer <jwt>` obtido em `POST /upload-service/token`.
 
-| Variável | Padrão | Descrição |
-|----------|--------|-----------|
-| `BACKEND_URL` | `http://localhost:8001` | URL base da API |
+| Método | Caminho (via proxy) | Descrição |
+|--------|----------------------|-----------|
+| POST | `/upload-service/token` | Login (form `username` / `password`) → JWT |
+| POST | `/upload-service/upload` | Upload do diagrama |
+| GET | `/upload-service/uploads` | Lista uploads |
+| GET | `/upload-service/uploads/{id}` | Detalhe do upload |
+| POST | `/ai-service/analyze` | Análise síncrona (texto já) |
+| GET | `/report-service/reports` | Lista relatórios |
+| GET | `/report-service/reports/{id}` | Detalhe do relatório |
+| GET | `/report-service/reports/{id}/attachment` | Arquivo original (autenticado) |
+| POST | `/report-service/feedback` | Feedback |
+| GET | `/report-service/stats` | Estatísticas |
+| GET | `/report-service/health` | Liveness (público) |
+| GET | `/report-service/health/db` | **Ping ao Postgres (JWT obrigatório)** |
+| GET | `/upload-service/health`, `/ai-service/health` | Liveness dos serviços |
 
-## Tema
+Rotas antigas `/api/v1/...` **não** existem neste projeto; o cliente usa exclusivamente os prefixos acima.
 
-O frontend usa um tema escuro profissional otimizado para demonstrações em vídeo:
-- Background: `#0e1117`
-- Accent: `#58a6ff`
-- Cards: `#161b22`
+## Integração com docker-compose
 
-## API Endpoints
-
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| POST | `/api/v1/upload` | Upload de diagrama |
-| GET | `/api/v1/analysis/{id}/status` | Status da análise |
-| GET | `/api/v1/reports` | Lista de relatórios |
-| GET | `/api/v1/reports/{id}` | Detalhe do relatório |
-| POST | `/api/v1/reports/{id}/feedback` | Enviar feedback |
-
-## Desenvolvimento
-
-Para executar em modo de desenvolvimento com hot-reload:
-
-```bash
-streamlit run app.py --server.runOnSave true
-```
-
-## Docker Compose Integration
-
-Adicione ao seu `docker-compose.yml`:
-
-```yaml
-frontend:
-  build: ./frontend
-  ports:
-    - "8501:8501"
-  environment:
-    - BACKEND_URL=http://upload-service:8001
-  depends_on:
-    - upload-service
+Ver `infrastructure/docker-compose.yml`: o serviço `frontend` publica `8051:8051` e depende dos microsserviços. Configure `JWT_SECRET_KEY`, `ADMIN_USER` e `ADMIN_PASSWORD` no `.env` da pasta `infrastructure`.

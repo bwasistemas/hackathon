@@ -1,10 +1,13 @@
 """RabbitMQ inbound adapter: consumes queue messages and runs the upload processing use case."""
 import json
+import logging
 from typing import Awaitable, Callable, Optional
 
 import aio_pika
 
 from app.application.process_diagram_upload import ProcessDiagramUploadUseCase
+
+logger = logging.getLogger(__name__)
 
 
 async def start_diagram_upload_consumer(
@@ -20,7 +23,7 @@ async def start_diagram_upload_consumer(
         await _handle_message(message, process_upload)
 
     await queue.consume(on_message)
-    print("RabbitMQ Consumer started inside AI Service.")
+    logger.info("RabbitMQ Consumer started inside AI Service.")
 
 
 async def _handle_message(
@@ -31,7 +34,7 @@ async def _handle_message(
         data = json.loads(message.body)
         upload_id = data["upload_id"]
         file_path = data.get("file_path", "")
-        print(f"AI Service processing {upload_id}...")
+        logger.info("AI Service processing upload %s", upload_id)
         await process_upload.execute(upload_id, file_path)
 
 
@@ -49,5 +52,5 @@ async def connect_rabbitmq(
             password=password,
         )
     except Exception as e:
-        print(f"Rabbit Error: {e}")
+        logger.exception("RabbitMQ connection failed")
         return None

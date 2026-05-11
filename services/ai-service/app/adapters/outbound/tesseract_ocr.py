@@ -1,9 +1,20 @@
 """OCR extraction using Pillow, pytesseract, and optional pdf2image for PDFs."""
 import asyncio
 import os
+import tempfile
 from typing import Optional
 
 from app.application.ports import TextExtractionPort
+
+
+def is_under_system_temp_dir(path: str) -> bool:
+    """True if path is under the OS temp directory (works on Windows and Linux)."""
+    abs_path = os.path.normcase(os.path.abspath(path))
+    tmp_root = os.path.normcase(os.path.abspath(tempfile.gettempdir()))
+    if abs_path == tmp_root:
+        return True
+    sep = os.sep
+    return abs_path.startswith(tmp_root + sep)
 
 
 class TesseractTextExtractor(TextExtractionPort):
@@ -11,12 +22,11 @@ class TesseractTextExtractor(TextExtractionPort):
     MAX_IMAGE_DIMENSION = 8000  # pixels
     OCR_TIMEOUT = 60  # seconds per page
     MAX_PDF_PAGES = 100
-    ALLOWED_BASEDIR = "/tmp"  # Or configurable
 
     async def extract_text(self, file_path: str) -> str:
         # 1. Path validation (prevent directory traversal)
         file_path = os.path.abspath(file_path)
-        if not file_path.startswith(self.ALLOWED_BASEDIR):
+        if not is_under_system_temp_dir(file_path):
             raise ValueError("Path traversal detected")
         
         # 2. File existence and size check

@@ -1,9 +1,12 @@
 """FastAPI inbound adapter: maps HTTP <-> application use cases."""
+import logging
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, status
 from fastapi.responses import Response
+from fastapi.security import OAuth2PasswordBearer
+from slowapi import Limiter
 
 from app.adapters.inbound.schemas import (
     FeedbackRequest,
@@ -12,6 +15,7 @@ from app.adapters.inbound.schemas import (
     ReportSummarySchema,
     StatisticsResponse,
 )
+from app.adapters.helpers.auth import verify_token
 from app.application.report_management import (
     GetReportUseCase,
     ListReportsUseCase,
@@ -24,6 +28,13 @@ from app.domain.exceptions import (
     UploadNotFoundError,
     DatabaseError,
 )
+
+logger = logging.getLogger(__name__)
+
+# OAuth2 scheme: this service does NOT issue tokens, it only validates them.
+# Clients must obtain tokens from the upload-service `/token` endpoint, which is
+# the single source of authentication for the platform.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/upload-service/token", auto_error=True)
 
 
 def get_get_report_use_case(request: Request) -> GetReportUseCase:
@@ -46,7 +57,18 @@ def get_statistics_use_case(request: Request) -> GetStatisticsUseCase:
     return request.app.state.get_statistics_use_case
 
 
-def build_router() -> APIRouter:
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    """Validate the bearer token (issued by upload-service) and return the username."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    token_data = verify_token(token, credentials_exception)
+    return token_data.username
+
+
+def build_router(limiter: Limiter) -> APIRouter:
     """Build and configure the HTTP router."""
     router = APIRouter()
 
@@ -56,8 +78,13 @@ def build_router() -> APIRouter:
         return {"status": "healthy", "service": "report-service"}
 
     @router.get("/health/db")
-    async def health_db(request: Request):
-        """Database health check endpoint."""
+    async def health_db(
+        request: Request,
+        current_user: str = Depends(get_current_user),
+    ):
+        """Database health check (requires JWT — avoids leaking DB availability to anonymous clients)."""
+        client_ip = request.client.host if request.client else "unknown"
+        logger.debug("DB health probe by %s from %s", current_user, client_ip)
         try:
             if request.app.state.db_pool:
                 async with request.app.state.db_pool.acquire() as conn:
@@ -68,11 +95,17 @@ def build_router() -> APIRouter:
         raise HTTPException(status_code=503, detail="Database Offline")
 
     @router.get("/reports/{upload_id}", response_model=ReportResponse)
+    @limiter.limit("10/minute")
     async def get_report(
+        request: Request,
         upload_id: str,
+        current_user: str = Depends(get_current_user),
         use_case: GetReportUseCase = Depends(get_get_report_use_case),
     ):
         """Get report details by upload ID."""
+        client_ip = request.client.host if request.client else "unknown"
+        logger.info(f"Report access by user {current_user} from {client_ip}: {upload_id}")
+        
         try:
             report = await use_case.execute(upload_id)
             return ReportResponse(
@@ -85,19 +118,25 @@ def build_router() -> APIRouter:
                 content_type=report.content_type,
             )
         except ReportNotFoundError as e:
+            logger.warning(f"Report not found: {upload_id} by user {current_user}")
             raise HTTPException(status_code=404, detail=str(e)) from e
         except DatabaseError as e:
+            logger.error(f"Database error accessing report {upload_id}: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e)) from e
         except Exception as e:
+            logger.error(f"Unexpected error accessing report {upload_id}: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e)) from e
 
     @router.get("/reports/{upload_id}/attachment")
     async def get_attachment(
         upload_id: str,
         request: Request,
+        current_user: str = Depends(get_current_user),
         use_case: GetReportUseCase = Depends(get_get_report_use_case),
     ):
-        """Stream the original uploaded file from MinIO."""
+        """Stream the original uploaded file from MinIO (requires the same JWT as other report APIs)."""
+        client_ip = request.client.host if request.client else "unknown"
+        logger.info(f"Attachment download by user {current_user} from {client_ip}: {upload_id}")
         minio_storage = getattr(request.app.state, "minio_storage", None)
         if not minio_storage:
             raise HTTPException(status_code=503, detail="Storage unavailable")
@@ -125,6 +164,7 @@ def build_router() -> APIRouter:
     async def list_reports(
         status: Optional[str] = Query(None),
         limit: int = Query(50, ge=1, le=100),
+        current_user: str = Depends(get_current_user),
         use_case: ListReportsUseCase = Depends(get_list_reports_use_case),
     ):
         """List reports with optional status filter."""
@@ -147,6 +187,7 @@ def build_router() -> APIRouter:
     @router.post("/feedback", response_model=FeedbackResponse)
     async def submit_feedback(
         feedback: FeedbackRequest,
+        current_user: str = Depends(get_current_user),
         use_case: SubmitFeedbackUseCase = Depends(get_submit_feedback_use_case),
     ):
         """Submit feedback for a report."""
@@ -171,6 +212,7 @@ def build_router() -> APIRouter:
 
     @router.get("/stats", response_model=StatisticsResponse)
     async def get_stats(
+        current_user: str = Depends(get_current_user),
         use_case: GetStatisticsUseCase = Depends(get_statistics_use_case),
     ):
         """Get statistics about uploads and feedback."""

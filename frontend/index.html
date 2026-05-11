@@ -4,15 +4,46 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ArchiAnalyzer - Comando Central</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=3">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- Fontes locais via system stack (styles.css) — evita CSP font-src para Google Fonts -->
+    <link rel="stylesheet" href="styles.css?v=5">
+    <!-- Pin Lucide to a specific version (avoids supply-chain risk from @latest).
+         When upgrading, also refresh the SRI hash via:
+           openssl dgst -sha384 -binary lucide.min.js | openssl base64 -A -->
+    <script
+        src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer"></script>
+    <!-- Tipografia: só system stack (styles.css). Sem Google/Adobe no DOM — evita CSP font-src e pedidos a use.typekit.net. -->
+    <!-- jsPDF: arquivo local (mesma origem) — não depende de CDN nem CORS no script. -->
+    <script src="vendor/jspdf.umd.min.js?v=2.5.1"></script>
 </head>
 <body>
     <div class="bg-gradient"></div>
+
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-container">
+        <div class="login-card">
+            <div class="login-header">
+                <img src="fiap-png.png" alt="FIAP Logo" class="login-logo">
+                <h1>ArchiAnalyzer</h1>
+                <p>Entre com suas credenciais</p>
+            </div>
+            <form id="login-form" class="login-form">
+                <div class="form-group">
+                    <label for="username">Usuário</label>
+                    <input type="text" id="username" name="username" autocomplete="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Senha</label>
+                    <input type="password" id="password" name="password" autocomplete="current-password" required>
+                </div>
+                <button type="submit" class="login-btn">Entrar</button>
+            </form>
+            <div id="login-error" class="login-error" style="display: none;"></div>
+        </div>
+    </div>
     
-    <div class="app-container">
+    <div class="app-container" id="app-container" style="display: none;">
         <!-- Sidebar Navigation -->
         <nav class="sidebar">
             <div class="logo">
@@ -37,6 +68,12 @@
                     <button class="nav-btn" data-target="view-services">
                         <i data-lucide="server"></i>
                         <span>Serviços & Infra</span>
+                    </button>
+                </li>
+                <li>
+                    <button class="nav-btn" id="logout-btn">
+                        <i data-lucide="log-out"></i>
+                        <span>Sair</span>
                     </button>
                 </li>
             </ul>
@@ -99,7 +136,7 @@
                 <div class="glass-panel mt-6">
                     <div class="panel-header">
                         <h3>Análises Recentes</h3>
-                        <button class="btn btn-sm" id="btn-refresh-dashboard" onclick="fetchAnalyses()">
+                        <button type="button" class="btn btn-sm" id="btn-refresh-dashboard">
                             <i data-lucide="refresh-cw"></i> Atualizar
                         </button>
                     </div>
@@ -141,7 +178,7 @@
                             <h3>Arraste e solte o seu diagrama</h3>
                             <p class="upload-hint">ou clique para selecionar do computador</p>
                             <span class="upload-limits">Máx 10MB • PNG, JPG, PDF</span>
-                            <button class="btn btn-primary mt-4" onclick="document.getElementById('file-input').click()">Selecionar Arquivo</button>
+                            <button type="button" class="btn btn-primary mt-4" id="btn-select-file">Selecionar Arquivo</button>
                         </div>
                         <div class="file-preview hidden" id="file-preview">
                             <div class="preview-info">
@@ -150,11 +187,11 @@
                                     <span class="file-name" id="preview-filename">diagrama.png</span>
                                     <span class="file-size" id="preview-size">1.2 MB</span>
                                 </div>
-                                <button class="btn-icon" id="btn-remove-file" onclick="removeSelectedFile()">
+                                <button type="button" class="btn-icon" id="btn-remove-file">
                                     <i data-lucide="x"></i>
                                 </button>
                             </div>
-                            <button class="btn btn-primary w-full mt-4" id="btn-submit-upload" onclick="submitUpload()">
+                            <button type="button" class="btn btn-primary w-full mt-4" id="btn-submit-upload">
                                 Iniciar Análise
                             </button>
                         </div>
@@ -178,100 +215,45 @@
 
                 <div class="glass-panel mt-6">
                     <div class="panel-header" style="margin-bottom: 20px;">
-                        <h3>Credenciais de Acesso Seguras</h3>
+                        <h3>Painéis Administrativos</h3>
                     </div>
+                    <p style="color:var(--text-muted); font-size:13px; margin-bottom:16px;">
+                        Credenciais estão em <code>infrastructure/.env</code>.
+                        O On/Off do quadro acima usa <code>/infra-health/*</code> no mesmo domínio (CSP);
+                        não é autenticação RabbitMQ/Grafana — o botão <strong>Acessar</strong> abre o console real no navegador.
+                    </p>
                     <div class="stats-grid">
                         <div class="stat-card" style="align-items: flex-start; flex-direction: column; gap: 8px;">
                             <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
                                 <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
-                                    <i data-lucide="message-square" style="width:14px;height:14px;"></i> MENSAGERIA
+                                    <i data-lucide="message-square" style="width:14px;height:14px;"></i> RABBITMQ
                                 </div>
-                                <span class="badge done" style="font-size:10px;">
-                                    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;margin-right:2px;"></span>On
-                                </span>
                             </div>
-                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
-                                <span style="color:var(--text-muted)">Porta:</span>
-                                <code style="color:#3b82f6; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">:5672</code>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
-                                <span style="color:var(--text-muted)">User:</span>
-                                <code style="color:#10b981; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap</code>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px;">
-                                <span style="color:var(--text-muted)">Pass:</span>
-                                <code style="color:#f59e0b; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap</code>
-                            </div>
+                            <a href="http://localhost:15672" target="_blank" rel="noopener noreferrer"
+                               style="font-size:12px; color:#8b5cf6; text-decoration:none;">
+                                <i data-lucide="external-link" style="width:12px;height:12px;"></i>
+                                Console (porta 15672)
+                            </a>
                         </div>
                         <div class="stat-card" style="align-items: flex-start; flex-direction: column; gap: 8px;">
-                            <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
-                                <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
-                                    <i data-lucide="database" style="width:14px;height:14px;"></i> DADOS
-                                </div>
-                                <span class="badge done" style="font-size:10px;">
-                                    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;margin-right:2px;"></span>On
-                                </span>
+                            <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
+                                <i data-lucide="activity" style="width:14px;height:14px;"></i> GRAFANA
                             </div>
-                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
-                                <span style="color:var(--text-muted)">Porta:</span>
-                                <code style="color:#3b82f6; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">:5432</code>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
-                                <span style="color:var(--text-muted)">User:</span>
-                                <code style="color:#10b981; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap</code>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px;">
-                                <span style="color:var(--text-muted)">Pass:</span>
-                                <code style="color:#f59e0b; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap</code>
-                            </div>
+                            <a href="http://localhost:3000" target="_blank" rel="noopener noreferrer"
+                               style="font-size:12px; color:#8b5cf6; text-decoration:none;">
+                                <i data-lucide="external-link" style="width:12px;height:12px;"></i>
+                                Dashboard (porta 3000)
+                            </a>
                         </div>
                         <div class="stat-card" style="align-items: flex-start; flex-direction: column; gap: 8px;">
-                            <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
-                                <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
-                                    <i data-lucide="activity" style="width:14px;height:14px;"></i> MONITORAMENTO
-                                </div>
-                                <span class="badge done" style="font-size:10px;">
-                                    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;margin-right:2px;"></span>On
-                                </span>
+                            <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
+                                <i data-lucide="hard-drive" style="width:14px;height:14px;"></i> MINIO
                             </div>
-                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
-                                <span style="color:var(--text-muted)">Porta:</span>
-                                <code style="color:#3b82f6; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">:3000</code>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
-                                <span style="color:var(--text-muted)">User:</span>
-                                <code style="color:#10b981; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap</code>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px;">
-                                <span style="color:var(--text-muted)">Pass:</span>
-                                <code style="color:#f59e0b; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap</code>
-                            </div>
-                        </div>
-                        <div class="stat-card" style="align-items: flex-start; flex-direction: column; gap: 8px;">
-                            <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
-                                <div style="font-size:12px; font-weight:700; color:var(--brand-primary); letter-spacing:1px; display:flex; align-items:center; gap:6px;">
-                                    <i data-lucide="hard-drive" style="width:14px;height:14px;"></i> STORAGE <span style="font-weight:400; opacity:0.6;">(S3)</span>
-                                </div>
-                                <span class="badge done" style="font-size:10px;">
-                                    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;margin-right:2px;"></span>On
-                                </span>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
-                                <span style="color:var(--text-muted)">Porta:</span>
-                                <code style="color:#3b82f6; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">:9001</code>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px; margin-top:4px;">
-                                <span style="color:var(--text-muted)">User:</span>
-                                <code style="color:#10b981; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap</code>
-                            </div>
-                            <div style="display:flex; justify-content:space-between; width:100%; font-size:13px;">
-                                <span style="color:var(--text-muted)">Pass:</span>
-                                <code style="color:#f59e0b; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.05); padding:2px 8px; border-radius:4px; font-family:monospace;">fiap1234</code>
-                            </div>
-                            <div style="display:flex; align-items:center; gap:6px; width:100%; margin-top:4px;">
-                                <i data-lucide="external-link" style="width:12px;height:12px; color:#8b5cf6;"></i>
-                                <a href="http://localhost:9001" target="_blank" style="font-size:12px; color:#8b5cf6; text-decoration:none;">Acessar Console</a>
-                            </div>
+                            <a href="http://localhost:9001" target="_blank" rel="noopener noreferrer"
+                               style="font-size:12px; color:#8b5cf6; text-decoration:none;">
+                                <i data-lucide="external-link" style="width:12px;height:12px;"></i>
+                                Console (porta 9001)
+                            </a>
                         </div>
                     </div>
                 </div>
@@ -279,17 +261,17 @@
             
             <!-- Report Modal -->
             <div id="report-modal" class="modal hidden">
-                <div class="modal-backdrop" onclick="closeReportModal()"></div>
+                <div class="modal-backdrop" id="report-modal-backdrop" role="presentation"></div>
                 <div class="modal-content">
                     <div class="modal-header">
                         <h2>Relatório de Arquitetura</h2>
-                        <button class="btn-icon" onclick="closeReportModal()"><i data-lucide="x"></i></button>
+                        <button type="button" class="btn-icon" id="btn-close-report-modal" aria-label="Fechar"><i data-lucide="x"></i></button>
                     </div>
                     <div class="modal-body" id="report-modal-body">
                         <!-- Loaded dynamically -->
                     </div>
                     <div class="modal-footer" id="report-modal-footer" style="padding: 12px 24px 16px; border-top: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: flex-end;">
-                        <button id="btn-download-pdf" class="btn btn-sm" onclick="downloadPdf()" style="opacity: 0.75; gap: 6px; font-size: 12px;">
+                        <button type="button" id="btn-download-pdf" class="btn btn-sm btn-download-pdf" style="opacity: 0.75; gap: 6px; font-size: 12px;">
                             <i data-lucide="file-down" style="width: 14px; height: 14px;"></i> Exportar PDF
                         </button>
                     </div>
@@ -302,6 +284,7 @@
     <!-- Toast Notifications -->
     <div id="toast-container" class="toast-container"></div>
 
-    <script src="script.js?v=5"></script>
+    <script src="security-logger.js?v=3"></script>
+    <script src="script.js?v=14"></script>
 </body>
 </html>

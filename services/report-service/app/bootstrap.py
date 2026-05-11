@@ -1,9 +1,16 @@
 """Composition root: wires adapters to use cases and builds the FastAPI application."""
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.adapters.inbound.http_routes import build_router
 from app.adapters.outbound.asyncpg_reports import create_repositories
@@ -15,11 +22,27 @@ from app.application.report_management import (
     GetStatisticsUseCase,
 )
 from app.config import load_settings
+from app.logging_config import setup_logging
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
 
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = load_settings()
+    
+    # Setup logging
+    setup_logging("report-service")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -54,14 +77,31 @@ def create_app() -> FastAPI:
 
     Instrumentator().instrument(app).expose(app)
 
+    # Rate limiting
+    limiter = Limiter(key_func=get_remote_address)
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, lambda request, exc: JSONResponse(
+        status_code=429, content={"detail": "Rate limit exceeded"}
+    ))
+    app.add_middleware(SlowAPIMiddleware)
+
+    # Security headers
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8051")
+    allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
+    if "*" in allowed_origins:
+        allowed_origins = ["http://localhost:8051"]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=allowed_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST"],
+        allow_headers=["Authorization", "Content-Type"],
+        max_age=600,
     )
 
-    app.include_router(build_router())
+    app.include_router(build_router(limiter))
 
     return app

@@ -3,7 +3,7 @@ import ast
 import json
 import re
 from json import JSONDecoder
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import AliasChoices, BaseModel, Field, ValidationError
 
 from app.domain.models import AnalysisResult, Component, Risk
 
@@ -19,13 +19,46 @@ class ComponentSchema(BaseModel):
 class RiskSchema(BaseModel):
     severity: str = Field(min_length=1, max_length=50)
     description: str = Field(min_length=1, max_length=1000)
-    recommendation: str = Field(min_length=1, max_length=1000)
+    # Models often omit or use PT keys; strict parse then falls back to loose — keep optional here too.
+    recommendation: str = Field(
+        default="",
+        max_length=1000,
+        validation_alias=AliasChoices(
+            "recommendation",
+            "recomendacao",
+            "recomendação",
+            "mitigacao",
+            "mitigação",
+            "remediation",
+            "sugestao",
+            "sugestão",
+        ),
+    )
 
 
 class AnalysisSchema(BaseModel):
-    components: list[ComponentSchema] = Field(min_length=0, max_length=50)
-    risks: list[RiskSchema] = Field(min_length=0, max_length=20)
-    summary: str = Field(default="", max_length=5000)
+    components: list[ComponentSchema] = Field(min_items=0, max_items=50)
+    risks: list[RiskSchema] = Field(min_items=0, max_items=20)
+    summary: str = Field(
+        default="",
+        max_length=5000,
+        validation_alias=AliasChoices("summary", "resumo"),
+    )
+    source_assessment: str = Field(
+        default="",
+        max_length=4000,
+        validation_alias=AliasChoices(
+            "source_assessment",
+            "avaliacao_fonte",
+            "avaliação_fonte",
+            "interpretacao_entrada",
+            "interpretação_entrada",
+            "avaliacao_ocr",
+            "avaliação_ocr",
+            "analise_da_entrada",
+            "análise_da_entrada",
+        ),
+    )
 
 
 def _strip_markdown_json_fence(text: str) -> str:
@@ -67,6 +100,21 @@ def _loads_json_lenient(raw: str | dict) -> dict:
     return obj
 
 
+def _fallback_recommendation_pt(severity: str, description: str) -> str:
+    """When the model omits recommendation, avoid empty UI — generic but actionable PT text."""
+    desc = (description or "").strip()
+    sev = (severity or "Média").strip()
+    if desc:
+        return (
+            f"Avaliar impacto deste risco (gravidade: {sev}) com a equipa, definir controles proporcionais "
+            "(monitorização, revisão de desenho ou correções incrementais) e validar antes de produção."
+        )
+    return (
+        "Tratar com prioridade alinhada à gravidade indicada: documentar suposições, aplicar controles adequados "
+        "e rever na próxima revisão arquitetural."
+    )
+
+
 def parse_analysis_json(content: str) -> AnalysisResult:
     try:
         parsed = _loads_json_lenient(content)
@@ -74,7 +122,8 @@ def parse_analysis_json(content: str) -> AnalysisResult:
         return AnalysisResult(
             components=[],
             risks=[],
-            summary="Analysis unavailable: parsing error"
+            summary="Analysis unavailable: parsing error",
+            source_assessment="",
         )
 
     try:
@@ -114,8 +163,21 @@ def _convert_to_domain_loose(parsed: dict) -> AnalysisResult:
             if not isinstance(item, dict):
                 continue
             severity = item.get("severity") or item.get("gravidade") or item.get("level") or ""
-            description = item.get("description") or item.get("descricao") or item.get("descrição") or item.get("details") or ""
-            recommendation = item.get("recommendation") or item.get("recomendacao") or item.get("recomendação") or item.get("suggestion") or ""
+            description = (
+                item.get("description")
+                or item.get("descricao")
+                or item.get("descrição")
+                or item.get("details")
+                or item.get("issue")
+                or item.get("problem")
+                or item.get("titulo")
+                or item.get("title")
+                or ""
+            )
+            recommendation = _extract_risk_recommendation(item)
+            recommendation = str(recommendation).strip() if recommendation else ""
+            if not recommendation and (severity or description):
+                recommendation = _fallback_recommendation_pt(str(severity), str(description))
             if severity or description or recommendation:
                 risks.append(
                     Risk(
@@ -134,10 +196,17 @@ def _convert_to_domain_loose(parsed: dict) -> AnalysisResult:
         return AnalysisResult(
             components=[],
             risks=[],
-            summary="Analysis unavailable: parsing error"
+            summary="Analysis unavailable: parsing error",
+            source_assessment="",
         )
 
-    return AnalysisResult(components=components, risks=risks, summary=summary)
+    sa = _extract_source_assessment(parsed)
+    return AnalysisResult(
+        components=components,
+        risks=risks,
+        summary=summary,
+        source_assessment=sa,
+    )
 
 
 def _convert_to_domain(validated: AnalysisSchema) -> AnalysisResult:
@@ -153,8 +222,95 @@ def _convert_to_domain(validated: AnalysisSchema) -> AnalysisResult:
         Risk(
             severity=r.severity,
             description=r.description,
-            recommendation=r.recommendation,
+            recommendation=(r.recommendation or "").strip()
+            or _fallback_recommendation_pt(r.severity, r.description),
         )
         for r in validated.risks
     ]
-    return AnalysisResult(components=components, risks=risks, summary=validated.summary)
+    return AnalysisResult(
+        components=components,
+        risks=risks,
+        summary=validated.summary,
+        source_assessment=(validated.source_assessment or "").strip(),
+    )
+
+
+def _extract_risk_recommendation(item: dict) -> str:
+    """Map common EN/PT keys and nested shapes to a single recommendation string."""
+    direct_keys = (
+        "recommendation",
+        "recomendacao",
+        "recomendação",
+        "mitigation",
+        "mitigacao",
+        "mitigação",
+        "remediation",
+        "remediação",
+        "acao_corretiva",
+        "acao_recomendada",
+        "contramedida",
+        "contorno",
+        "solucao",
+        "solução",
+        "sugestao",
+        "sugestão",
+        "plano_de_acao",
+        "medidas",
+        "action",
+        "actions",
+    )
+    for k in direct_keys:
+        v = item.get(k)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    # Lists of actions / next steps (some models)
+    for list_key in (
+        "recommended_actions",
+        "acoes_recomendadas",
+        "ações_recomendadas",
+        "actions",
+        "passos",
+        "next_steps",
+        "proximos_passos",
+        "próximos_passos",
+    ):
+        lst = item.get(list_key)
+        if isinstance(lst, list) and lst:
+            parts: list[str] = []
+            for x in lst:
+                if isinstance(x, str) and x.strip():
+                    parts.append(x.strip())
+                elif isinstance(x, dict):
+                    t = x.get("description") or x.get("text") or x.get("action") or x.get("step")
+                    if t is not None and str(t).strip():
+                        parts.append(str(t).strip())
+            if parts:
+                return "; ".join(parts)
+    # Nested mitigation object (some models)
+    mit = item.get("mitigation") or item.get("mitigacao")
+    if isinstance(mit, dict):
+        inner = mit.get("description") or mit.get("steps") or mit.get("text")
+        if inner is not None and str(inner).strip():
+            return str(inner).strip()
+    if isinstance(mit, str) and mit.strip():
+        return mit.strip()
+    return ""
+
+
+def _extract_source_assessment(parsed: dict) -> str:
+    keys = (
+        "source_assessment",
+        "avaliacao_fonte",
+        "avaliação_fonte",
+        "interpretacao_entrada",
+        "interpretação_entrada",
+        "avaliacao_ocr",
+        "avaliação_ocr",
+        "analise_da_entrada",
+        "análise_da_entrada",
+    )
+    for k in keys:
+        v = parsed.get(k)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    return ""

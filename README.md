@@ -2,6 +2,40 @@
 
 Sistema de análise automatizada de diagramas de arquitetura de software para hackathon acadêmico.
 
+## Segurança
+
+### Autenticação e Autorização
+- **JWT Authentication**: Sistema de autenticação baseado em tokens JWT com expiração de 30 minutos
+- **Rate Limiting**: Controle de taxa de requisições (5/min para uploads, 10/min para relatórios, 10/min para análise IA)
+- **Security Headers**: Headers OWASP recomendados (X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, HSTS, CSP)
+
+### Monitoramento de Segurança
+- **Logging Estruturado**: Logs rotativos para eventos de segurança e aplicação
+- **Auditoria**: Rastreamento de tentativas de autenticação, uploads e acessos suspeitos
+- **Frontend Security**: Logger de segurança no cliente para monitoramento de atividades
+
+### Configurações de Segurança
+- **CORS Restrito**: Apenas origens específicas permitidas
+- **Input Validation**: Validação rigorosa de dados com Pydantic
+- **Environment Variables**: Credenciais sensíveis armazenadas em variáveis de ambiente
+
+### Verificação de Segurança
+Execute o script de validação de segurança antes do deploy:
+
+```bash
+./scripts/security-check.sh
+```
+
+Este script verifica:
+- Configuração do JWT_SECRET_KEY
+- Headers CORS apropriados
+- Diretório de logs
+- Configurações SSL do banco de dados
+- Segurança MinIO e RabbitMQ
+- Headers de segurança habilitados
+- Rate limiting configurado
+- Sintaxe Python dos serviços
+
 ## Arquitetura
 
 ``` text

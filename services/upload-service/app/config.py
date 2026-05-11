@@ -1,6 +1,18 @@
 """Environment-backed settings (composition root reads these; domain stays pure)."""
+import logging
 import os
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
+
+# Sentinel values from examples. If these leak into runtime the operator never
+# rotated the secret – we refuse to start.
+_INSECURE_JWT_VALUES = frozenset(
+    {
+        "your-secret-key-here-change-in-production",
+        "replace-with-a-64-char-random-string",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -17,6 +29,25 @@ class Settings:
     minio_bucket: str
     minio_region: str
     minio_use_ssl: bool
+    jwt_secret_key: str
+    jwt_algorithm: str
+    jwt_access_token_expire_minutes: int
+    admin_user: str
+    admin_password: str
+
+
+def _require_jwt_secret() -> str:
+    secret = os.getenv("JWT_SECRET_KEY", "").strip()
+    if not secret or secret in _INSECURE_JWT_VALUES:
+        raise RuntimeError(
+            "JWT_SECRET_KEY is not set or still uses the insecure default. "
+            "Generate a strong key (e.g. `python -c \"import secrets; "
+            "print(secrets.token_urlsafe(48))\"`) and export it before starting "
+            "the service."
+        )
+    if len(secret) < 32:
+        logger.warning("JWT_SECRET_KEY is shorter than 32 chars; consider rotating to a longer value")
+    return secret
 
 
 def load_settings() -> Settings:
@@ -36,4 +67,9 @@ def load_settings() -> Settings:
         minio_bucket=os.getenv("MINIO_BUCKET", "fiap"),
         minio_region=os.getenv("MINIO_REGION", "us-east-1"),
         minio_use_ssl=os.getenv("MINIO_USE_SSL", "false").lower() == "true",
+        jwt_secret_key=_require_jwt_secret(),
+        jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
+        jwt_access_token_expire_minutes=int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30")),
+        admin_user=os.getenv("ADMIN_USER", ""),
+        admin_password=os.getenv("ADMIN_PASSWORD", ""),
     )

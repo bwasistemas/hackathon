@@ -1,9 +1,12 @@
 """RabbitMQ adapter for publishing upload events."""
 import json
+import logging
 
 import aio_pika
 
 from app.application.ports import MessagePublisherPort
+
+logger = logging.getLogger(__name__)
 
 
 class RabbitMQPublisher(MessagePublisherPort):
@@ -45,7 +48,7 @@ class NullMessagePublisher(MessagePublisherPort):
         file_path: str,
         content_type: str
     ) -> None:
-        print(f"[NullPublisher] Would publish event for upload {upload_id}")
+        logger.info("Null publish event for upload %s", upload_id)
         return None
 
 
@@ -65,5 +68,5 @@ async def connect_rabbitmq(
         )
         return connection
     except Exception as e:
-        print(f"RabbitMQ Error: {e}")
+        logger.exception("RabbitMQ connection failed")
         return None

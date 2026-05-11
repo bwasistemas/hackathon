@@ -4,6 +4,11 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+class TokenData(BaseModel):
+    """Decoded JWT payload (only the username we care about)."""
+    username: Optional[str] = None
+
+
 class FeedbackRequest(BaseModel):
     """Request schema for submitting feedback."""
     upload_id: str

@@ -5,6 +5,7 @@ WORKDIR /app
 # Copy requirements and install OS dependencies
 COPY requirements.txt .
 RUN apt-get update && apt-get install -y \
+    curl \
     tesseract-ocr \
     poppler-utils \
     libmagic1 \

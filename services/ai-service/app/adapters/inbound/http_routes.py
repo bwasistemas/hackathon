@@ -1,34 +1,40 @@
 """FastAPI inbound adapter: maps HTTP ↔ application use cases."""
 import logging
-import os
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Request, Header
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordBearer
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from app.adapters.inbound.schemas import AnalysisResponse, AnalyzeRequest, ComponentSchema, RiskSchema
+from app.adapters.helpers.auth import verify_token
 from app.application.analyze_diagram import AnalyzeDiagramUseCase
-from app.domain.exceptions import LlmAnalysisError, LlmNotConfiguredError, ValidationError
+from app.domain.exceptions import LlmAnalysisError, LlmNotConfiguredError
+from app.config import Settings
 
 logger = logging.getLogger(__name__)
 
-limiter = Limiter(key_func=get_remote_address)
+# OAuth2 scheme: this service does NOT issue tokens. Clients must obtain a JWT
+# from the upload-service `/token` endpoint and present it here.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/upload-service/token", auto_error=True)
 
 
 def get_analyze_use_case(request: Request) -> AnalyzeDiagramUseCase:
     return request.app.state.analyze_use_case
 
 
-async def verify_api_key(x_api_key: str = Header(None)):
-    valid_key = os.getenv("API_KEY", "")
-    if not valid_key:
-        raise HTTPException(status_code=500, detail="API key not configured")
-    if x_api_key != valid_key:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return x_api_key
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    """Validate the bearer token (issued by upload-service) and return the username."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    token_data = verify_token(token, credentials_exception)
+    return token_data.username
 
 
-def build_router() -> APIRouter:
+def build_router(settings: Settings, limiter: Limiter) -> APIRouter:
     router = APIRouter()
 
     @router.get("/health")
@@ -40,7 +46,7 @@ def build_router() -> APIRouter:
     async def analyze(
         request: Request,
         body: AnalyzeRequest,
-        api_key: str = Depends(verify_api_key),
+        current_user: str = Depends(get_current_user),
         analyze_use_case: AnalyzeDiagramUseCase = Depends(get_analyze_use_case),
     ):
         request_id = str(uuid.uuid4())[:8]
@@ -101,11 +107,12 @@ def build_router() -> APIRouter:
                     RiskSchema(
                         severity=r.severity,
                         description=r.description,
-                        recommendation=r.recommendation,
+                        recommendation=r.recommendation or "",
                     )
                     for r in result.risks
                 ],
-                summary=result.summary,
+                summary=result.summary or "",
+                source_assessment=result.source_assessment or "",
             )
             logger.info(f"[{request_id}] Analysis success: {len(response.components)} components")
             return response
