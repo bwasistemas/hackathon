@@ -104,28 +104,34 @@ Acesse: `github.com/bwasistemas/hackathon → Settings → Secrets and variables
 
 | Secret | Descrição |
 |---|---|
-| `VPS_HOST` | IP público da VPS |
-| `VPS_USER` | usuário SSH (`root` ou `ubuntu`) |
-| `VPS_SSH_KEY` | conteúdo da chave privada SSH (sem passphrase) |
+| `GH_PAT` | Personal Access Token do GitHub (escopo `repo`) — necessario para clonar o repositorio na VPS |
+| `VPS_HOST` | IP publico da VPS |
+| `VPS_USER` | usuario SSH (`root` ou `ubuntu`) |
+| `VPS_SSH_KEY` | conteudo da chave privada SSH (sem passphrase) |
 | `VPS_SSH_PORT` | porta SSH — omita se for a 22 |
 | `LETSENCRYPT_EMAIL` | email para certificados Let's Encrypt |
-| `POSTGRES_USER` | usuário do PostgreSQL |
+| `POSTGRES_USER` | usuario do PostgreSQL |
 | `POSTGRES_PASSWORD` | senha do PostgreSQL |
-| `RABBITMQ_USER` | usuário do RabbitMQ |
+| `RABBITMQ_USER` | usuario do RabbitMQ |
 | `RABBITMQ_PASSWORD` | senha do RabbitMQ |
 | `OPENAI_API_KEY` | chave da API OpenAI / OpenRouter |
-| `JWT_SECRET_KEY` | chave de assinatura dos JWTs (≥ 48 chars aleatórios) |
-| `ADMIN_USER` | usuário admin da aplicação |
-| `ADMIN_PASSWORD` | senha do usuário admin da aplicação |
-| `MINIO_ACCESS_KEY` | usuário root do MinIO (MINIO_ROOT_USER) |
+| `JWT_SECRET_KEY` | chave de assinatura dos JWTs (>= 48 chars aleatorios) |
+| `ADMIN_USER` | usuario admin da aplicacao |
+| `ADMIN_PASSWORD` | senha do usuario admin da aplicacao |
+| `MINIO_ACCESS_KEY` | usuario root do MinIO (MINIO_ROOT_USER) |
 | `MINIO_SECRET_KEY` | senha root do MinIO (MINIO_ROOT_PASSWORD) |
-| `GRAFANA_USER` | usuário do Grafana |
+| `GRAFANA_USER` | usuario do Grafana |
 | `GRAFANA_PASSWORD` | senha do Grafana |
 
-> O `GITHUB_TOKEN` **não precisa ser configurado** — é gerado automaticamente pelo GitHub Actions.
+> **Como criar o `GH_PAT`:**
+> GitHub → Settings do perfil → Developer settings → Personal access tokens → Tokens (classic)
+> → Generate new token → escopo `repo` → copiar o token → adicionar como secret `GH_PAT`.
+>
+> O `GITHUB_TOKEN` automatico do Actions nao funciona para clonar repositorios em maquinas
+> externas (VPS). O `GH_PAT` resolve isso e e usado exclusivamente para o `git clone/fetch` na VPS.
 >
 > O pipeline cria/atualiza os Kubernetes Secrets a cada deploy com esses valores,
-> então **não é preciso rodar `setup-env.sh` manualmente** antes do primeiro deploy.
+> entao **nao e preciso rodar `setup-env.sh` manualmente** antes do primeiro deploy.
 
 ### Variables (valores não sensíveis)
 
