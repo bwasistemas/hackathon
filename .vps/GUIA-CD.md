@@ -11,7 +11,7 @@ GitHub Actions (CI/CD)
 VPS                                                                      │
 ├─ Nginx (80/443) ← SSL Let's Encrypt                                   │
 │   ├─ archanalyzer.brunoretiro.com.br/           → Kind NodePort 30080 (arch-prod)
-│   ├─ hmg.archanalyzer.brunoretiro.com.br/       → Kind NodePort 30081 (arch-hmg)
+│   ├─ archanalyzerhmg.brunoretiro.com.br/       → Kind NodePort 30081 (arch-hmg)
 │   ├─ archanalyzer.brunoretiro.com.br/portainer/ → Portainer :9000
 │   └─ archanalyzer.brunoretiro.com.br/k8s/       → Headlamp  :30444
 │
@@ -85,7 +85,7 @@ Os manifests Kubernetes em `infrastructure/k8s/` são usados **apenas** pelo pip
 | `setup-dirs.sh` | Clona/atualiza repositório nos diretórios de deploy |
 | `setup-env.sh` | Cria arquivos `.env` para prod e hmg (prompts mínimos) |
 | `setup-nginx.sh` | Configura Nginx e recarrega |
-| `setup-ssl-hmg.sh` | Gera certificado SSL para `hmg.archanalyzer.brunoretiro.com.br` |
+| `setup-ssl-hmg.sh` | Gera certificado SSL para `archanalyzerhmg.brunoretiro.com.br` |
 | `lib.sh` | Funções compartilhadas (logging, cores, utilitários) |
 | `nginx-archanalyzer.conf` | Template Nginx (setup-nginx.sh substitui os placeholders) |
 
@@ -134,7 +134,7 @@ Na mesma tela, aba **Variables** (não Secrets):
 | Variable | Padrão | Descrição |
 |---|---|---|
 | `DOMAIN_PROD` | `archanalyzer.brunoretiro.com.br` | Domínio de produção |
-| `DOMAIN_HMG` | `hmg.archanalyzer.brunoretiro.com.br` | Domínio de homologação |
+| `DOMAIN_HMG` | `archanalyzerhmg.brunoretiro.com.br` | Domínio de homologação |
 | `MAX_REPLICAS` | `5` | Máximo de réplicas do ai-service (KEDA) |
 | `QUEUE_MESSAGES_PER_REPLICA` | `5` | Mensagens por réplica para escala do ai-service |
 | `POSTGRES_DB` | `fiap` | Nome do banco de dados |
@@ -155,7 +155,7 @@ ssh-copy-id -i ~/.ssh/deploy_key.pub USUARIO@IP_DA_VPS
 
 ```
 1. DNS     : criar registro A  archanalyzer.brunoretiro.com.br → IP da VPS
-             criar registro A  hmg.archanalyzer.brunoretiro.com.br → IP da VPS
+             criar registro A  archanalyzerhmg.brunoretiro.com.br → IP da VPS
 2. GitHub  : criar os secrets e variables acima
 3. VPS     : executar ./setup-vps.sh (instala Kind, KEDA, Nginx, SSL, Portainer, Headlamp)
              OU acionar o workflow "Setup VPS (first-time)" manualmente

@@ -1,5 +1,5 @@
 #!/bin/bash
-# setup-ssl-hmg.sh — Gera o certificado SSL para hmg.archanalyzer.brunoretiro.com.br
+# setup-ssl-hmg.sh — Gera o certificado SSL para archanalyzerhmg.brunoretiro.com.br
 #
 # Uso: sudo bash setup-ssl-hmg.sh <email> [--skip-dns-check] [--force]
 #   <email>           Email para notificações Let's Encrypt (obrigatório)

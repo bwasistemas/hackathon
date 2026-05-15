@@ -123,7 +123,7 @@ jobs:
             echo "deploy_dir=/opt/arch-analyzer/hmg"                                          >> "$GITHUB_OUTPUT"
             echo "namespace=arch-hmg"                                                          >> "$GITHUB_OUTPUT"
             echo "frontend_nodeport=30081"                                                     >> "$GITHUB_OUTPUT"
-            echo "allowed_origins=https://${{ vars.DOMAIN_HMG || 'hmg.archanalyzer.brunoretiro.com.br' }}" >> "$GITHUB_OUTPUT"
+            echo "allowed_origins=https://${{ vars.DOMAIN_HMG || 'archanalyzerhmg.brunoretiro.com.br' }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Deploy via SSH

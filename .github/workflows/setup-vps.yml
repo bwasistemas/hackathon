@@ -47,7 +47,7 @@ jobs:
           SKIP_DNS_CHECK:     ${{ inputs.skip_dns_check }}
           FORCE_ENV:          ${{ inputs.force_env }}
           DOMAIN_PROD:        ${{ vars.DOMAIN_PROD || 'archanalyzer.brunoretiro.com.br' }}
-          DOMAIN_HMG:         ${{ vars.DOMAIN_HMG  || 'hmg.archanalyzer.brunoretiro.com.br' }}
+          DOMAIN_HMG:         ${{ vars.DOMAIN_HMG  || 'archanalyzerhmg.brunoretiro.com.br' }}
         with:
           host:     ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}

@@ -104,7 +104,7 @@ REPO_URL="https://github.com/bwasistemas/hackathon.git"
 
 # Domínios — lidos de variáveis de ambiente (GitHub Actions vars.*) com fallback
 DOMAIN_PROD="${DOMAIN_PROD:-archanalyzer.brunoretiro.com.br}"
-DOMAIN_HMG="${DOMAIN_HMG:-hmg.archanalyzer.brunoretiro.com.br}"
+DOMAIN_HMG="${DOMAIN_HMG:-archanalyzerhmg.brunoretiro.com.br}"
 
 NGINX_CONF_DEST="/etc/nginx/sites-available/default"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

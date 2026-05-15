@@ -5,7 +5,7 @@
 #   1. setup-dirs.sh    → clona repositório (prod e hmg)
 #   2. setup-env.sh     → cria arquivos .env (prompts mínimos)
 #   3. setup-nginx.sh   → configura Nginx para produção
-#   4. setup-ssl-hmg.sh → gera SSL para hmg.archanalyzer.brunoretiro.com.br
+#   4. setup-ssl-hmg.sh → gera SSL para archanalyzerhmg.brunoretiro.com.br
 #
 # Variáveis de ambiente (têm precedência sobre os argumentos):
 #   LETSENCRYPT_EMAIL   Email para o certbot (secret do GitHub: LETSENCRYPT_EMAIL)
