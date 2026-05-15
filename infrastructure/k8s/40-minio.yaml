@@ -42,7 +42,7 @@ spec:
     spec:
       containers:
         - name: minio
-          image: minio/minio:latest
+          image: minio/minio:RELEASE.2024-07-31T05-46-26Z
           command:
             - server
             - /data

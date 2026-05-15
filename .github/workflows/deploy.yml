@@ -166,6 +166,30 @@ jobs:
           script: |
             set -e
 
+            # Validar credenciais obrigatorias
+            MISSING=""
+            [ -z "$POSTGRES_USER" ]     && MISSING="$MISSING POSTGRES_USER"
+            [ -z "$POSTGRES_PASSWORD" ] && MISSING="$MISSING POSTGRES_PASSWORD"
+            [ -z "$RABBITMQ_USER" ]     && MISSING="$MISSING RABBITMQ_USER"
+            [ -z "$RABBITMQ_PASSWORD" ] && MISSING="$MISSING RABBITMQ_PASSWORD"
+            [ -z "$JWT_SECRET_KEY" ]    && MISSING="$MISSING JWT_SECRET_KEY"
+            [ -z "$MINIO_ACCESS_KEY" ]  && MISSING="$MISSING MINIO_ACCESS_KEY"
+            [ -z "$MINIO_SECRET_KEY" ]  && MISSING="$MISSING MINIO_SECRET_KEY"
+            if [ -n "$MISSING" ]; then
+              echo "ERRO: Secrets obrigatorios nao configurados no repositorio:$MISSING"
+              echo "Configure esses valores em Settings > Secrets and variables > Actions"
+              exit 1
+            fi
+            # MinIO exige usuario >= 3 chars e senha >= 8 chars
+            if [ "${#MINIO_ACCESS_KEY}" -lt 3 ]; then
+              echo "ERRO: MINIO_ACCESS_KEY deve ter pelo menos 3 caracteres"
+              exit 1
+            fi
+            if [ "${#MINIO_SECRET_KEY}" -lt 8 ]; then
+              echo "ERRO: MINIO_SECRET_KEY deve ter pelo menos 8 caracteres"
+              exit 1
+            fi
+
             # Configurar chave SSH de deploy para o GitHub
             mkdir -p ~/.ssh
             echo "$GH_DEPLOY_KEY" > ~/.ssh/github_deploy
