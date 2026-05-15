@@ -61,30 +61,37 @@ jobs:
             REPO_DIR="/opt/arch-analyzer/prod"
             SCRIPT_DIR="$REPO_DIR/.vps"
 
-            # ── Primeira execução: clonar o repo para ter acesso aos scripts ──
+            # ── Clonar/atualizar repo para ter acesso aos scripts ─────────────
             if [ ! -d "$REPO_DIR/.git" ]; then
-              echo "Clonando repositório pela primeira vez..."
-              mkdir -p "$REPO_DIR"
+              echo "Clonando repositorio pela primeira vez..."
+              sudo mkdir -p "$REPO_DIR"
+              sudo chown "$(whoami):$(whoami)" "$REPO_DIR"
               git clone --branch main --depth 1 \
                 "https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/bwasistemas/hackathon.git" \
                 "$REPO_DIR"
             else
-              echo "Atualizando repositório..."
+              echo "Atualizando repositorio..."
               git -C "$REPO_DIR" remote set-url origin \
                 "https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/bwasistemas/hackathon.git"
               git -C "$REPO_DIR" fetch origin main --quiet
               git -C "$REPO_DIR" reset --hard origin/main --quiet
             fi
 
-            chmod +x "$SCRIPT_DIR"/*.sh
+            sudo chmod +x "$SCRIPT_DIR"/*.sh
 
-            # ── Montar flags a partir dos inputs ─────────────────────────────
+            # ── 1. Setup de infraestrutura (Kind, KEDA, Nginx, SSL, Portainer) ─
+            # Roda apenas se o Kind ainda nao estiver instalado
+            if ! command -v kind &>/dev/null || ! kind get clusters 2>/dev/null | grep -q .; then
+              echo "Kind nao encontrado ou sem cluster — executando setup-vps.sh..."
+              sudo -E bash "$SCRIPT_DIR/setup-vps.sh" "$LETSENCRYPT_EMAIL"
+            else
+              echo "Kind ja instalado com cluster ativo — pulando setup-vps.sh"
+            fi
+
+            # ── 2. Setup de deploy (chown, Nginx, SSL HMG) ───────────────────
             FLAGS=(--non-interactive)
             [ "$SKIP_SSL_HMG"   = "true" ] && FLAGS+=(--skip-ssl-hmg)
             [ "$SKIP_DNS_CHECK" = "true" ] && FLAGS+=(--skip-dns-check)
             [ "$FORCE_ENV"      = "true" ] && FLAGS+=(--force-env)
 
-            # ── Executar o orchestrador (secrets via env vars, não CLI) ──────
-            # EMAIL  vem de $LETSENCRYPT_EMAIL (já no ambiente)
-            # TOKEN  vem de $GITHUB_TOKEN       (já no ambiente)
             sudo -E bash "$SCRIPT_DIR/setup-deploy.sh" "${FLAGS[@]}"
