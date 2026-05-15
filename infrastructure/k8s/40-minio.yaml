@@ -74,24 +74,20 @@ spec:
               mountPath: /etc/localtime
               readOnly: true
           readinessProbe:
-            exec:
-              command:
-                - mc
-                - ready
-                - local
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
             initialDelaySeconds: 20
             periodSeconds: 30
-            timeoutSeconds: 20
+            timeoutSeconds: 10
             failureThreshold: 3
           livenessProbe:
-            exec:
-              command:
-                - mc
-                - ready
-                - local
+            httpGet:
+              path: /minio/health/live
+              port: 9000
             initialDelaySeconds: 60
             periodSeconds: 60
-            timeoutSeconds: 20
+            timeoutSeconds: 10
             failureThreshold: 3
           resources:
             requests:

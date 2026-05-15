@@ -203,21 +203,26 @@ jobs:
               fi
             fi
 
-            # ── NodePort no host (Kind extraPortMappings) ────────────────────
+            # ── NodePort no host (socat para Kind sem extraPortMappings) ──────
             # Se o cluster foi criado sem extraPortMappings, localhost:NODEPORT nao escuta.
-            # Socat cria o encaminhamento sem necessidade de recriar o cluster.
+            # Socat cria o encaminhamento; script de restart adicionado ao crontab (@reboot).
             if ! ss -tlnp 2>/dev/null | grep -q ":${FRONTEND_NODEPORT} "; then
               CTRL_IP=$(docker inspect kind-control-plane \
                 --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
                 2>/dev/null | head -1 || echo "")
               if [ -n "$CTRL_IP" ]; then
                 pkill -f "socat.*:${FRONTEND_NODEPORT}" 2>/dev/null || true
-                nohup socat TCP-LISTEN:${FRONTEND_NODEPORT},bind=127.0.0.1,fork,reuseaddr \
-                  TCP:${CTRL_IP}:${FRONTEND_NODEPORT} \
-                  >/tmp/socat-${FRONTEND_NODEPORT}.log 2>&1 &
-                disown
+                SOCAT_SCRIPT="$HOME/.socat-${FRONTEND_NODEPORT}.sh"
+                printf '#!/bin/bash\n' > "$SOCAT_SCRIPT"
+                printf 'IP=$(docker inspect kind-control-plane --format '"'"'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'"'"' 2>/dev/null | head -1)\n' >> "$SOCAT_SCRIPT"
+                printf '[ -z "$IP" ] && exit 1\n' >> "$SOCAT_SCRIPT"
+                printf 'pkill -f "socat.*:%s" 2>/dev/null || true\n' "${FRONTEND_NODEPORT}" >> "$SOCAT_SCRIPT"
+                printf 'nohup socat TCP-LISTEN:%s,bind=127.0.0.1,fork,reuseaddr TCP:${IP}:%s >/tmp/socat-%s.log 2>&1 &\n' "${FRONTEND_NODEPORT}" "${FRONTEND_NODEPORT}" "${FRONTEND_NODEPORT}" >> "$SOCAT_SCRIPT"
+                chmod +x "$SOCAT_SCRIPT"
+                (crontab -l 2>/dev/null | grep -v "socat-${FRONTEND_NODEPORT}"; echo "@reboot $SOCAT_SCRIPT") | crontab -
+                "$SOCAT_SCRIPT"
                 sleep 2
-                echo "socat: localhost:${FRONTEND_NODEPORT} → kind-control-plane (${CTRL_IP}):${FRONTEND_NODEPORT}"
+                echo "socat configurado (persistente via crontab): localhost:${FRONTEND_NODEPORT} → kind-control-plane (${CTRL_IP}):${FRONTEND_NODEPORT}"
                 echo "NOTA: para solucao permanente recrie o cluster Kind via 'Setup VPS (first-time)'"
               else
                 echo "AVISO: kind-control-plane nao encontrado — porta ${FRONTEND_NODEPORT} pode nao ser acessivel"
@@ -311,10 +316,18 @@ jobs:
 
             # ── Status final ──────────────────────────────────────────────────
             echo ""
-            echo "=== Pods em execução ==="
+            echo "=== Pods em execucao ==="
             kubectl get pods -n "$NAMESPACE" -o wide
 
+            # Mostrar logs de pods em CrashLoopBackOff ou Error
+            for pod in $(kubectl get pods -n "$NAMESPACE" --no-headers \
+              | awk '$3 ~ /CrashLoopBackOff|Error|OOMKilled/ {print $1}'); do
+              echo ""
+              echo "--- Logs: $pod ---"
+              kubectl logs -n "$NAMESPACE" "$pod" --tail=30 2>/dev/null || true
+            done
+
             echo ""
-            echo "=== Deploy concluído ==="
+            echo "=== Deploy concluido ==="
             echo "Namespace: $NAMESPACE"
             echo "Tag      : $IMAGE_TAG"
