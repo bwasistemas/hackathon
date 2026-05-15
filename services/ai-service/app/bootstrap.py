@@ -30,7 +30,7 @@ from app.adapters.inbound.rabbitmq_consumer import (
     start_diagram_upload_consumer,
 )
 from app.adapters.outbound.asyncpg_uploads import create_upload_repository
-from app.adapters.outbound.strands_multi_agents_adapter import SwarmLlmAdapter, build_multi_agents
+from app.adapters.outbound.openai_adapter import OpenAiLlmAdapter, build_openai_client
 from app.adapters.outbound.minio_storage import MinIOStorage
 from app.adapters.outbound.llm_ocr import LlmOCRAdapter
 from app.application.analyze_diagram import AnalyzeDiagramUseCase
@@ -74,8 +74,8 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         upload_repo, db_pool = await create_upload_repository(settings.database_url)
         app.state.db_pool = db_pool
-        multi_agents = build_multi_agents()
-        llm = SwarmLlmAdapter(multi_agents)
+        client = build_openai_client(settings.openai_api_key.get_secret_value(), settings.openai_base_url)
+        llm = OpenAiLlmAdapter(client=client, model=settings.llm_model)
         ocr = LlmOCRAdapter(settings=settings)
         storage = MinIOStorage(settings)
 

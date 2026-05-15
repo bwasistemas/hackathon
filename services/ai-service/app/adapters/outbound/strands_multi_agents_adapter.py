@@ -1,121 +1,91 @@
-"""OpenAI adapter implementing LlmAnalyzerPort for the AI service."""
-import asyncio
+"""Swarm / Strands multi-agent adapter implementing LlmAnalyzerPort."""
+import json
 import logging
-import os
 from typing import Any
 
-from app.adapters.outbound.helpers.llm import OpenAIClient, build_llm_client, normalize_assistant_content
 from app.application.ports import LlmAnalyzerPort
-from app.domain.exceptions import LlmAnalysisError, LlmNotConfiguredError
+from app.domain.exceptions import LlmAnalysisError
 from app.domain.models import AnalysisResult
 from app.adapters.outbound.llm_json_parser import parse_analysis_json
-from app.config import load_settings
 
-settings = load_settings()
 logger = logging.getLogger(__name__)
 
-_ANALYSIS_JSON_OBJECT = os.getenv("LLM_ANALYSIS_JSON_OBJECT", "true").lower() in ("1", "true", "yes", "on")
 
-ANALYSIS_PROMPT = """
-You are a senior software architect and analysis specialist.
-You will receive text describing an architecture diagram. That text may come from multimodal LLM extraction
-from images/PDFs or from classical OCR — treat it as the best available description of the diagram;
-diagrams that are mostly shapes may yield little text — infer cautiously from what is present.
-
-Output only valid JSON with these keys:
-- source_assessment (string, Portuguese): 3–6 sentences explaining (a) how complete/useful the OCR text was,
-  (b) what you assumed or inferred beyond literal OCR, and (c) confidence limits. This is NOT the executive summary.
-- components: list of objects {name, type, description}
-- risks: list of objects {severity, description, recommendation}
-  • Each risk MUST include a non-empty "recommendation" field with a concrete, actionable mitigation in Portuguese
-    (you may also duplicate the same text under "recomendacao" if you prefer bilingual keys, but "recommendation" is required).
-- summary (string, Portuguese): concise executive summary of the architecture.
-
-Example risk shape:
-{"severity":"Alta","description":"...","recommendation":"Implementar filas assíncronas entre X e Y para..."}
-
-Always respond in Brazilian Portuguese except JSON keys, which must be exactly as specified above.
-"""
-
-
-def build_multi_agents() -> OpenAIClient:
-    """Build and return a configured OpenAI client."""
-    client = build_llm_client(
-        api_key=settings.openai_api_key.get_secret_value(),
-        base_url=settings.openai_base_url,
-        model_id=settings.llm_model,
-        max_tokens=3000,
-        temperature=0.0,
-    )
-    if client is None:
-        raise LlmNotConfiguredError("OpenAI API key is not configured")
-    return client
+def _text_from_message(message: Any) -> str:
+    """Normalize a Strands message dict/object to plain text."""
+    if message is None:
+        return ""
+    if isinstance(message, str):
+        return message
+    if isinstance(message, dict):
+        blocks = message.get("content") or []
+        parts: list[str] = []
+        for block in blocks:
+            if isinstance(block, dict) and "text" in block:
+                parts.append(str(block["text"]))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "\n".join(parts)
+    content = getattr(message, "content", None)
+    if content is None:
+        return str(message)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return _text_from_message({"role": "assistant", "content": content})
+    return str(content)
 
 
-def _build_messages(text: str, source_hint: str | None = None) -> list[dict[str, str]]:
-    messages = [
-        {"role": "system", "content": ANALYSIS_PROMPT.strip()},
-        {"role": "user", "content": text},
-    ]
-    if source_hint:
-        messages.append({"role": "user", "content": f"Source hint: {source_hint}."})
-    return messages
+def _agent_output_to_str(result: Any) -> str:
+    """Serialize an agent output to a string (dicts become JSON)."""
+    if isinstance(result, str):
+        return result
+    if isinstance(result, dict):
+        return json.dumps(result)
+    msg = getattr(result, "message", None)
+    if msg is not None:
+        return _text_from_message(msg)
+    return str(result)
 
 
-def _response_to_text(response: Any) -> str:
-    if hasattr(response, "choices") and response.choices:
-        msg = response.choices[0].message
-        return normalize_assistant_content(getattr(msg, "content", None))
-    if isinstance(response, dict):
-        choices = response.get("choices")
-        if choices and isinstance(choices, list):
-            message = choices[0].get("message")
-            if isinstance(message, dict):
-                return normalize_assistant_content(message.get("content"))
-    return normalize_assistant_content(str(response))
+def extract_conversation_history(swarm_result: Any) -> str:
+    """Format swarm node history as 'agent_name: message' lines."""
+    results = getattr(swarm_result, "results", {})
+    node_history = getattr(swarm_result, "node_history", [])
+    lines: list[str] = []
+    for node in node_history:
+        node_id = getattr(node, "node_id", None)
+        node_result = results.get(node_id)
+        if node_result is None:
+            continue
+        agent_name = getattr(node_result, "agent_name", node_id)
+        result_obj = getattr(node_result, "result", None)
+        message = getattr(result_obj, "message", None) if result_obj is not None else None
+        lines.append(f"{agent_name}: {_text_from_message(message)}")
+    return "\n".join(lines)
+
+
+def build_report_agent(swarm_result: Any) -> str:
+    """Extract the final JSON report string from a swarm result."""
+    return extract_conversation_history(swarm_result)
 
 
 class SwarmLlmAdapter(LlmAnalyzerPort):
-    """Adapter for LLM analysis using OpenAI chat completions."""
+    """LLM adapter backed by a multi-agent swarm (e.g. AWS Strands)."""
 
-    def __init__(self, client: OpenAIClient) -> None:
-        self._client = client
+    def __init__(self, swarm: Any) -> None:
+        self._swarm = swarm
 
     async def analyze(self, text: str, source_hint: str | None = None) -> AnalysisResult:
-        if self._client is None:
-            raise LlmNotConfiguredError("LLM client not configured")
-
-        messages = _build_messages(text, source_hint)
-        params = {
-            "model": getattr(self._client, "model_id", None),
-            "messages": messages,
-            "max_tokens": getattr(self._client, "max_tokens", 3000),
-            "temperature": getattr(self._client, "temperature", 0.0),
-        }
-        if _ANALYSIS_JSON_OBJECT:
-            params["response_format"] = {"type": "json_object"}
-
+        prompt = text
+        if source_hint:
+            prompt = f"{text}\nSource hint: {source_hint}."
         try:
-            response = await asyncio.to_thread(self._client.create_chat_completion, **params)
-        except Exception as first:
-            if _ANALYSIS_JSON_OBJECT and params.get("response_format"):
-                logger.warning(
-                    "Chat completion with json_object failed (%s); retrying without response_format",
-                    first,
-                )
-                params_retry = {k: v for k, v in params.items() if k != "response_format"}
-                try:
-                    response = await asyncio.to_thread(self._client.create_chat_completion, **params_retry)
-                except Exception as second:
-                    logger.error("LLM analysis failed after retry", exc_info=True)
-                    raise LlmAnalysisError(str(second)) from second
-            else:
-                logger.error("LLM analysis failed", exc_info=True)
-                raise LlmAnalysisError(str(first)) from first
-
-        try:
-            content = _response_to_text(response)
-            return parse_analysis_json(content)
-        except Exception as e:
-            logger.error("LLM response handling failed", exc_info=True)
-            raise LlmAnalysisError(str(e)) from e
+            swarm_result = await self._swarm.invoke_async(prompt)
+            raw_json = build_report_agent(swarm_result)
+            return parse_analysis_json(raw_json)
+        except LlmAnalysisError:
+            raise
+        except Exception as exc:
+            logger.error("Swarm analysis failed", exc_info=True)
+            raise LlmAnalysisError(str(exc)) from exc
