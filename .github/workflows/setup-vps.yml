@@ -63,12 +63,7 @@ jobs:
             echo "$GH_DEPLOY_KEY" > ~/.ssh/github_deploy
             chmod 600 ~/.ssh/github_deploy
             ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
-            grep -q "Host github.com" ~/.ssh/config 2>/dev/null || cat >> ~/.ssh/config << 'SSHEOF'
-Host github.com
-  IdentityFile ~/.ssh/github_deploy
-  StrictHostKeyChecking no
-SSHEOF
-            chmod 600 ~/.ssh/config
+            export GIT_SSH_COMMAND="ssh -i ~/.ssh/github_deploy -o StrictHostKeyChecking=no"
 
             REPO_DIR="/opt/arch-analyzer/prod"
             SCRIPT_DIR="$REPO_DIR/.vps"
