@@ -64,4 +64,10 @@ for ENV in prod hmg; do
     fi
 done
 
-ok "Diretórios prontos em $BASE_DIR/"
+ok "Diretorios prontos em $BASE_DIR/"
+
+# Transfere propriedade ao usuario que invocou sudo (usuario SSH do CI)
+if [ -n "${SUDO_USER:-}" ]; then
+    chown -R "$SUDO_USER:$SUDO_USER" "$BASE_DIR"
+    ok "Propriedade de $BASE_DIR transferida para $SUDO_USER"
+fi
