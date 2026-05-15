@@ -132,6 +132,7 @@ jobs:
           REPO_SSH_URL:               ${{ vars.REPO_SSH_URL }}
           GH_DEPLOY_KEY:              ${{ secrets.GH_DEPLOY_KEY }}
           GITHUB_TOKEN:               ${{ secrets.GITHUB_TOKEN }}
+          GHCR_PAT:                   ${{ secrets.GHCR_PAT }}
           GITHUB_ACTOR:               ${{ github.actor }}
           IMAGE_PREFIX:               ghcr.io/bwasistemas/hackathon
           IMAGE_TAG:                  ${{ needs.build-push.outputs.image_tag }}
@@ -162,7 +163,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_SSH_PORT || '22' }}
-          envs: REPO_SSH_URL,GH_DEPLOY_KEY,GITHUB_TOKEN,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,BRANCH,DEPLOY_DIR,NAMESPACE,FRONTEND_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
+          envs: REPO_SSH_URL,GH_DEPLOY_KEY,GITHUB_TOKEN,GHCR_PAT,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,BRANCH,DEPLOY_DIR,NAMESPACE,FRONTEND_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
           script: |
             set -e
 
@@ -265,11 +266,15 @@ jobs:
             kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
             # ── GHCR pull secret ──────────────────────────────────────────────
-            echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+            # GITHUB_TOKEN expira ao fim do workflow — KEDA ao escalar pods
+            # depois do deploy receberia 403. GHCR_PAT (PAT com read:packages)
+            # e permanente e deve ser configurado nos Secrets do repositorio.
+            PULL_TOKEN="${GHCR_PAT:-$GITHUB_TOKEN}"
+            echo "$PULL_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
             kubectl create secret docker-registry ghcr-pull-secret \
               --docker-server=ghcr.io \
               --docker-username="$GITHUB_ACTOR" \
-              --docker-password="$GITHUB_TOKEN" \
+              --docker-password="$PULL_TOKEN" \
               --namespace="$NAMESPACE" \
               --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
