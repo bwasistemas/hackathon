@@ -1,26 +1,263 @@
-# Triggers only — test logic lives in reusable-report-service-tests.yml
 name: Deploy Application
 
 on:
   push:
-    branches: [main]
+    branches: [main, hmg]
   workflow_dispatch:
 
 permissions:
   contents: read
+  packages: write
+
+env:
+  IMAGE_PREFIX: ghcr.io/bwasistemas/hackathon
 
 jobs:
+  # ── Testes (todos obrigatórios antes do deploy) ───────────────────────────────
+
   test-report-service:
     uses: ./.github/workflows/reusable-report-service-tests.yml
+
   test-ai-service:
     uses: ./.github/workflows/reusable-ai-service-tests.yml
+
   test-upload-service:
     uses: ./.github/workflows/reusable-upload-service-tests.yml
-  deploy-app:
+
+  # ── Build & Push de imagens para o GHCR ──────────────────────────────────────
+
+  build-push:
+    name: Build & Push Images
     needs: [test-report-service, test-ai-service, test-upload-service]
     runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.value }}
     steps:
-      - name: Deploy placeholder
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tag
+        id: tag
+        run: echo "value=${{ github.ref_name }}-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/frontend:${{ steps.tag.outputs.value }}
+            ${{ env.IMAGE_PREFIX }}/frontend:${{ github.ref_name }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Build & push upload-service
+        uses: docker/build-push-action@v5
+        with:
+          context: services/upload-service
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/upload-service:${{ steps.tag.outputs.value }}
+            ${{ env.IMAGE_PREFIX }}/upload-service:${{ github.ref_name }}
+          cache-from: type=gha,scope=upload-service
+          cache-to: type=gha,mode=max,scope=upload-service
+
+      - name: Build & push ai-service
+        uses: docker/build-push-action@v5
+        with:
+          context: services/ai-service
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/ai-service:${{ steps.tag.outputs.value }}
+            ${{ env.IMAGE_PREFIX }}/ai-service:${{ github.ref_name }}
+          cache-from: type=gha,scope=ai-service
+          cache-to: type=gha,mode=max,scope=ai-service
+
+      - name: Build & push report-service
+        uses: docker/build-push-action@v5
+        with:
+          context: services/report-service
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/report-service:${{ steps.tag.outputs.value }}
+            ${{ env.IMAGE_PREFIX }}/report-service:${{ github.ref_name }}
+          cache-from: type=gha,scope=report-service
+          cache-to: type=gha,mode=max,scope=report-service
+
+      - name: Build & push rabbitmq
+        uses: docker/build-push-action@v5
+        with:
+          context: infrastructure/rabbitmq
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/rabbitmq:${{ steps.tag.outputs.value }}
+            ${{ env.IMAGE_PREFIX }}/rabbitmq:${{ github.ref_name }}
+          cache-from: type=gha,scope=rabbitmq
+          cache-to: type=gha,mode=max,scope=rabbitmq
+
+  # ── Deploy na VPS via SSH (kubectl → Kind) ───────────────────────────────────
+
+  deploy:
+    name: Deploy (${{ github.ref_name == 'main' && 'producao' || 'homologacao' }})
+    needs: build-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set deployment vars
+        id: vars
         run: |
-          echo "Deploying application..."
-          echo "TODO: Implement deployment logic"
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "deploy_dir=/opt/arch-analyzer/prod"                                         >> "$GITHUB_OUTPUT"
+            echo "namespace=arch-prod"                                                         >> "$GITHUB_OUTPUT"
+            echo "frontend_nodeport=30080"                                                     >> "$GITHUB_OUTPUT"
+            echo "allowed_origins=https://${{ vars.DOMAIN_PROD || 'archanalyzer.brunoretiro.com.br' }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy_dir=/opt/arch-analyzer/hmg"                                          >> "$GITHUB_OUTPUT"
+            echo "namespace=arch-hmg"                                                          >> "$GITHUB_OUTPUT"
+            echo "frontend_nodeport=30081"                                                     >> "$GITHUB_OUTPUT"
+            echo "allowed_origins=https://${{ vars.DOMAIN_HMG || 'hmg.archanalyzer.brunoretiro.com.br' }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GITHUB_TOKEN:               ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR:               ${{ github.actor }}
+          IMAGE_PREFIX:               ghcr.io/bwasistemas/hackathon
+          IMAGE_TAG:                  ${{ needs.build-push.outputs.image_tag }}
+          BRANCH:                     ${{ github.ref_name }}
+          DEPLOY_DIR:                 ${{ steps.vars.outputs.deploy_dir }}
+          NAMESPACE:                  ${{ steps.vars.outputs.namespace }}
+          FRONTEND_NODEPORT:          ${{ steps.vars.outputs.frontend_nodeport }}
+          ALLOWED_ORIGINS:            ${{ steps.vars.outputs.allowed_origins }}
+          POSTGRES_DB:                ${{ vars.POSTGRES_DB || 'fiap' }}
+          MINIO_BUCKET:               ${{ vars.MINIO_BUCKET || 'fiap' }}
+          TZ:                         ${{ vars.TZ || 'America/Sao_Paulo' }}
+          MAX_REPLICAS:               ${{ vars.MAX_REPLICAS || '5' }}
+          QUEUE_MESSAGES_PER_REPLICA: ${{ vars.QUEUE_MESSAGES_PER_REPLICA || '5' }}
+          POSTGRES_USER:              ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD:          ${{ secrets.POSTGRES_PASSWORD }}
+          RABBITMQ_USER:              ${{ secrets.RABBITMQ_USER }}
+          RABBITMQ_PASSWORD:          ${{ secrets.RABBITMQ_PASSWORD }}
+          OPENAI_API_KEY:             ${{ secrets.OPENAI_API_KEY }}
+          JWT_SECRET_KEY:             ${{ secrets.JWT_SECRET_KEY }}
+          ADMIN_USER:                 ${{ secrets.ADMIN_USER }}
+          ADMIN_PASSWORD:             ${{ secrets.ADMIN_PASSWORD }}
+          MINIO_ACCESS_KEY:           ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY:           ${{ secrets.MINIO_SECRET_KEY }}
+          GRAFANA_USER:               ${{ secrets.GRAFANA_USER }}
+          GRAFANA_PASSWORD:           ${{ secrets.GRAFANA_PASSWORD }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          envs: GITHUB_TOKEN,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,BRANCH,DEPLOY_DIR,NAMESPACE,FRONTEND_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
+          script: |
+            set -e
+
+            # Atualizar código do repositório
+            mkdir -p "$DEPLOY_DIR"
+            if [ -d "$DEPLOY_DIR/.git" ]; then
+              git -C "$DEPLOY_DIR" fetch origin "$BRANCH"
+              git -C "$DEPLOY_DIR" reset --hard "origin/$BRANCH"
+            else
+              git clone --branch "$BRANCH" \
+                "https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/bwasistemas/hackathon.git" \
+                "$DEPLOY_DIR"
+            fi
+
+            MANIFESTS_DIR="$DEPLOY_DIR/infrastructure/k8s"
+
+            # Garantir que envsubst está disponível
+            command -v envsubst &>/dev/null || apt-get install -y gettext-base
+
+            # ── Namespace ─────────────────────────────────────────────────────
+            kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+
+            # ── GHCR pull secret ──────────────────────────────────────────────
+            echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+            kubectl create secret docker-registry ghcr-pull-secret \
+              --docker-server=ghcr.io \
+              --docker-username="$GITHUB_ACTOR" \
+              --docker-password="$GITHUB_TOKEN" \
+              --namespace="$NAMESPACE" \
+              --dry-run=client -o yaml | kubectl apply -f -
+
+            # ── Secrets da aplicação ──────────────────────────────────────────
+            kubectl create secret generic arch-secrets \
+              --namespace="$NAMESPACE" \
+              --from-literal=POSTGRES_USER="$POSTGRES_USER" \
+              --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+              --from-literal=RABBITMQ_USER="$RABBITMQ_USER" \
+              --from-literal=RABBITMQ_PASSWORD="$RABBITMQ_PASSWORD" \
+              --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY" \
+              --from-literal=JWT_SECRET_KEY="$JWT_SECRET_KEY" \
+              --from-literal=ADMIN_USER="$ADMIN_USER" \
+              --from-literal=ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+              --from-literal=MINIO_ACCESS_KEY="$MINIO_ACCESS_KEY" \
+              --from-literal=MINIO_SECRET_KEY="$MINIO_SECRET_KEY" \
+              --from-literal=GRAFANA_USER="$GRAFANA_USER" \
+              --from-literal=GRAFANA_PASSWORD="$GRAFANA_PASSWORD" \
+              --dry-run=client -o yaml | kubectl apply -f -
+
+            # ── Secret KEDA — URL AMQP para autoscaling por fila ─────────────
+            RABBITMQ_AMQP_URL="amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq.${NAMESPACE}.svc.cluster.local:5672/"
+            kubectl create secret generic rabbitmq-keda-auth \
+              --namespace="$NAMESPACE" \
+              --from-literal=host="$RABBITMQ_AMQP_URL" \
+              --dry-run=client -o yaml | kubectl apply -f -
+
+            # ── Aplicar manifests com substituição de variáveis ───────────────
+            ENVSUBST_VARS='${IMAGE_PREFIX} ${IMAGE_TAG} ${POSTGRES_DB} ${MINIO_BUCKET} ${TZ} ${ALLOWED_ORIGINS} ${FRONTEND_NODEPORT} ${MAX_REPLICAS} ${QUEUE_MESSAGES_PER_REPLICA}'
+            for manifest in $(ls "$MANIFESTS_DIR"/*.yaml | sort); do
+              echo "Aplicando: $(basename $manifest)..."
+              envsubst "$ENVSUBST_VARS" < "$manifest" | kubectl apply -n "$NAMESPACE" -f -
+            done
+
+            # ── Aguardar rollouts ─────────────────────────────────────────────
+            for deploy in upload-service ai-service report-service frontend prometheus grafana; do
+              echo "Aguardando rollout de $deploy..."
+              kubectl rollout status deployment/"$deploy" -n "$NAMESPACE" --timeout=180s || true
+            done
+            for ss in postgres rabbitmq minio; do
+              echo "Aguardando StatefulSet $ss..."
+              kubectl rollout status statefulset/"$ss" -n "$NAMESPACE" --timeout=180s || true
+            done
+
+            # ── Smoke test ────────────────────────────────────────────────────
+            echo "Smoke test na porta $FRONTEND_NODEPORT..."
+            for i in $(seq 1 10); do
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                --max-time 5 "http://localhost:${FRONTEND_NODEPORT}" 2>/dev/null || echo "000")
+              if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "304" ]; then
+                echo "Frontend OK — HTTP $HTTP_CODE"
+                break
+              fi
+              echo "  Tentativa $i/10 — HTTP $HTTP_CODE — aguardando 6s..."
+              sleep 6
+            done
+
+            if [ "$HTTP_CODE" = "000" ]; then
+              echo "AVISO: Frontend não respondeu no smoke test — verifique os logs:"
+              kubectl get pods -n "$NAMESPACE"
+              exit 1
+            fi
+
+            # ── Status final ──────────────────────────────────────────────────
+            echo ""
+            echo "=== Pods em execução ==="
+            kubectl get pods -n "$NAMESPACE" -o wide
+
+            echo ""
+            echo "=== Deploy concluído ==="
+            echo "Namespace: $NAMESPACE"
+            echo "Tag      : $IMAGE_TAG"

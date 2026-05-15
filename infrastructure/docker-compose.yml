@@ -1,16 +1,24 @@
 version: '3.8'
 
+# Timezone compartilhado — evita que containers fiquem com hora adiantada em relação ao host.
+# TZ é lido do .env (padrão: America/Sao_Paulo). /etc/localtime garante que imagens
+# que ignoram a env var também usem o mesmo fuso do host.
+x-tz: &tz
+  TZ: ${TZ:-America/Sao_Paulo}
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: arch-analyzer-postgres
     environment:
+      <<: *tz
       POSTGRES_USER: ${POSTGRES_USER:-fiap}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fiap}
       POSTGRES_DB: ${POSTGRES_DB:-fiap}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - postgres_data:/var/lib/postgresql/data
     networks:
       - arch-network
@@ -25,8 +33,11 @@ services:
     image: prometheuscommunity/postgres-exporter:v0.13.1
     container_name: arch-analyzer-postgres-exporter
     environment:
+      <<: *tz
       # Senhas com caracteres especiais na URL exigem encoding em DATA_SOURCE_NAME.
       DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}?sslmode=disable"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
     networks:
       - arch-network
     depends_on:
@@ -41,14 +52,15 @@ services:
     image: arch-analyzer-rabbitmq:3.13-management
     container_name: arch-analyzer-rabbitmq
     environment:
+      <<: *tz
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-fiap}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-fiap}
     ports:
-      - "5672:5672"
-      - "15672:15672"
-      # Endpoint rabbitmq_prometheus (scrape em rabbitmq:15692)
-      - "15692:15692"
+      - "${RABBITMQ_HOST_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_HOST_PORT:-15672}:15672"
+      - "${RABBITMQ_PROMETHEUS_HOST_PORT:-15692}:15692"
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - arch-network
@@ -62,12 +74,14 @@ services:
     image: minio/minio:latest
     container_name: arch-analyzer-minio
     ports:
-      - "9000:9000"  # API S3
-      - "9001:9001"  # Console
+      - "${MINIO_API_HOST_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
     environment:
-      MINIO_ROOT_USER: fiap
-      MINIO_ROOT_PASSWORD: fiap1234
+      <<: *tz
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-fiap}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-fiap1234}
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - minio_data:/data
     networks:
       - arch-network
@@ -85,10 +99,11 @@ services:
       dockerfile: Dockerfile
     container_name: arch-analyzer-upload
     ports:
-      - "8001:8001"
+      - "${UPLOAD_HOST_PORT:-8001}:8001"
     env_file:
       - .env
     environment:
+      - TZ=${TZ:-America/Sao_Paulo}
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
@@ -101,7 +116,6 @@ services:
       - MINIO_REGION=${MINIO_REGION:-us-east-1}
       - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
       - SERVICE_NAME=upload-service
-      # Shared JWT signing key (must match ai-service & report-service; set in .env)
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_missing_see_infrastructure_.env.example}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-30}
@@ -116,6 +130,7 @@ services:
       minio:
         condition: service_healthy
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - uploads_data:/app/uploads
     networks:
       - arch-network
@@ -132,10 +147,11 @@ services:
       dockerfile: Dockerfile
     container_name: arch-analyzer-ai
     ports:
-      - "8003:8003"
+      - "${AI_HOST_PORT:-8003}:8003"
     env_file:
       - .env
     environment:
+      - TZ=${TZ:-America/Sao_Paulo}
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
@@ -151,11 +167,11 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
-      # Shared JWT verification key (must match upload-service)
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_missing_see_infrastructure_.env.example}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8051}
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - uploads_data:/app/uploads
     depends_on:
       postgres:
@@ -179,10 +195,11 @@ services:
       dockerfile: Dockerfile
     container_name: arch-analyzer-report
     ports:
-      - "8004:8004"
+      - "${REPORT_HOST_PORT:-8004}:8004"
     env_file:
       - .env
     environment:
+      - TZ=${TZ:-America/Sao_Paulo}
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-fiap}
@@ -190,7 +207,6 @@ services:
       - MINIO_REGION=${MINIO_REGION:-us-east-1}
       - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
       - SERVICE_NAME=report-service
-      # Shared JWT verification key (must match upload-service)
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_missing_see_infrastructure_.env.example}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8051}
@@ -199,6 +215,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
     networks:
       - arch-network
     restart: unless-stopped
@@ -214,13 +232,17 @@ services:
       dockerfile: Dockerfile
     container_name: arch-analyzer-frontend
     ports:
-      - "8051:8051"
+      - "${FRONTEND_HOST_PORT:-8051}:8051"
+    environment:
+      <<: *tz
     depends_on:
       - upload-service
       - report-service
       - rabbitmq
       - grafana
       - prometheus
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
     networks:
       - arch-network
     restart: unless-stopped
@@ -234,8 +256,11 @@ services:
     image: prom/prometheus:v2.52.0
     container_name: arch-analyzer-prometheus
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_HOST_PORT:-9090}:9090"
+    environment:
+      <<: *tz
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     networks:
@@ -254,8 +279,11 @@ services:
     image: grafana/loki:2.9.0
     container_name: arch-analyzer-loki
     ports:
-      - "3100:3100"
+      - "${LOKI_HOST_PORT:-3100}:3100"
+    environment:
+      <<: *tz
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - ./loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
     command: -config.file=/etc/loki/local-config.yaml
@@ -271,7 +299,10 @@ services:
   promtail:
     image: grafana/promtail:3.3.2
     container_name: arch-analyzer-promtail
+    environment:
+      <<: *tz
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - ./promtail/promtail-config.yaml:/etc/promtail/config.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock
     command: -config.file=/etc/promtail/config.yaml
@@ -285,14 +316,16 @@ services:
     image: grafana/grafana:10.4.0
     container_name: arch-analyzer-grafana
     ports:
-      - "3000:3000"
+      - "${GRAFANA_HOST_PORT:-3000}:3000"
     environment:
+      - TZ=${TZ:-America/Sao_Paulo}
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-fiap}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-fiap}
       - GF_USERS_ALLOW_SIGN_UP=false
     env_file:
       - .env
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
@@ -319,4 +352,3 @@ volumes:
   prometheus_data:
   grafana_data:
   loki_data:
-

@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: arch-config
+data:
+  POSTGRES_DB: "${POSTGRES_DB}"
+  RABBITMQ_HOST: "rabbitmq"
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_VHOST: "/"
+  RABBITMQ_MANAGEMENT_PORT: "15672"
+  MINIO_ENDPOINT: "minio:9000"
+  MINIO_BUCKET: "${MINIO_BUCKET}"
+  MINIO_REGION: "us-east-1"
+  MINIO_USE_SSL: "false"
+  JWT_ALGORITHM: "HS256"
+  JWT_ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+  OPENAI_BASE_URL: "https://api.openai.com/v1"
+  LLM_MODEL: "deepseek/deepseek-v3.2"
+  LLM_OCR: "google/gemma-4-26b-a4b-it"
+  MAX_HANDOFFS: "20"
+  MAX_ITERATIONS: "20"
+  EXECUTION_TIMEOUT: "120.0"
+  NODE_TIMEOUT: "60.0"
+  REPETITIVE_HANDOFF_DETECTION_WINDOW: "8"
+  REPETITIVE_HANDOFF_MIN_UNIQUE_AGENTS: "3"
+  TZ: "${TZ}"
+  ALLOWED_ORIGINS: "${ALLOWED_ORIGINS}"
+  AI_SERVICE_URL: "http://ai-service:8003"
+  SERVICE_NAME: "arch-analyzer"

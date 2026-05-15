@@ -1,0 +1,90 @@
+name: Setup VPS (first-time)
+
+# Acionado manualmente pelo GitHub UI ou CLI.
+# Faz o setup completo da VPS: clone dos repos, .env, Nginx e SSL para HMG.
+#
+# Pré-requisitos (Secrets do repositório):
+#   VPS_HOST           — IP ou hostname da VPS
+#   VPS_USER           — usuário SSH
+#   VPS_SSH_KEY        — chave privada SSH (sem passphrase)
+#   VPS_SSH_PORT       — porta SSH (opcional; padrão: 22)
+#   LETSENCRYPT_EMAIL  — email para certificados Let's Encrypt
+#
+# Para clone de repo privado, o GITHUB_TOKEN do Actions já é suficiente
+# (tem permissão contents:read por padrão).
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_ssl_hmg:
+        description: "Pular geração do cert SSL para HMG (DNS ainda não propagou)"
+        type: boolean
+        default: false
+      skip_dns_check:
+        description: "Pular verificação de propagação de DNS"
+        type: boolean
+        default: false
+      force_env:
+        description: "Recriar .env mesmo se já existirem"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Setup VPS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GITHUB_TOKEN:       ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR:       ${{ github.actor }}
+          LETSENCRYPT_EMAIL:  ${{ secrets.LETSENCRYPT_EMAIL }}
+          SKIP_SSL_HMG:       ${{ inputs.skip_ssl_hmg }}
+          SKIP_DNS_CHECK:     ${{ inputs.skip_dns_check }}
+          FORCE_ENV:          ${{ inputs.force_env }}
+          DOMAIN_PROD:        ${{ vars.DOMAIN_PROD || 'archanalyzer.brunoretiro.com.br' }}
+          DOMAIN_HMG:         ${{ vars.DOMAIN_HMG  || 'hmg.archanalyzer.brunoretiro.com.br' }}
+        with:
+          host:     ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key:      ${{ secrets.VPS_SSH_KEY }}
+          port:     ${{ secrets.VPS_SSH_PORT || '22' }}
+          envs:     GITHUB_TOKEN,GITHUB_ACTOR,LETSENCRYPT_EMAIL,SKIP_SSL_HMG,SKIP_DNS_CHECK,FORCE_ENV,DOMAIN_PROD,DOMAIN_HMG
+          command_timeout: 30m
+          script: |
+            set -e
+
+            REPO_DIR="/opt/arch-analyzer/prod"
+            SCRIPT_DIR="$REPO_DIR/.vps"
+
+            # ── Primeira execução: clonar o repo para ter acesso aos scripts ──
+            if [ ! -d "$REPO_DIR/.git" ]; then
+              echo "Clonando repositório pela primeira vez..."
+              mkdir -p "$REPO_DIR"
+              git clone --branch main --depth 1 \
+                "https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/bwasistemas/hackathon.git" \
+                "$REPO_DIR"
+            else
+              echo "Atualizando repositório..."
+              git -C "$REPO_DIR" remote set-url origin \
+                "https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/bwasistemas/hackathon.git"
+              git -C "$REPO_DIR" fetch origin main --quiet
+              git -C "$REPO_DIR" reset --hard origin/main --quiet
+            fi
+
+            chmod +x "$SCRIPT_DIR"/*.sh
+
+            # ── Montar flags a partir dos inputs ─────────────────────────────
+            FLAGS=(--non-interactive)
+            [ "$SKIP_SSL_HMG"   = "true" ] && FLAGS+=(--skip-ssl-hmg)
+            [ "$SKIP_DNS_CHECK" = "true" ] && FLAGS+=(--skip-dns-check)
+            [ "$FORCE_ENV"      = "true" ] && FLAGS+=(--force-env)
+
+            # ── Executar o orchestrador (secrets via env vars, não CLI) ──────
+            # EMAIL  vem de $LETSENCRYPT_EMAIL (já no ambiente)
+            # TOKEN  vem de $GITHUB_TOKEN       (já no ambiente)
+            sudo -E bash "$SCRIPT_DIR/setup-deploy.sh" "${FLAGS[@]}"
