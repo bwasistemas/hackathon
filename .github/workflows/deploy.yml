@@ -165,6 +165,10 @@ jobs:
           script: |
             set -e
 
+            # Garantir que github.com esta no known_hosts
+            mkdir -p ~/.ssh
+            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+
             REPO_SSH="$REPO_SSH_URL"
 
             # Atualizar codigo do repositorio
