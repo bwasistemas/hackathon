@@ -190,6 +190,19 @@ jobs:
             # Garantir que envsubst está disponível
             command -v envsubst &>/dev/null || apt-get install -y gettext-base
 
+            # ── Kubeconfig do Kind ────────────────────────────────────────────
+            if ! kubectl cluster-info &>/dev/null 2>&1; then
+              CLUSTER_NAME=$(kind get clusters 2>/dev/null | head -1)
+              if [ -n "$CLUSTER_NAME" ]; then
+                echo "Exportando kubeconfig do cluster Kind: $CLUSTER_NAME"
+                kind export kubeconfig --name "$CLUSTER_NAME"
+              else
+                echo "ERRO: Cluster Kind nao encontrado."
+                echo "Execute o workflow 'Setup VPS (first-time)' antes do primeiro deploy."
+                exit 1
+              fi
+            fi
+
             # ── Namespace ─────────────────────────────────────────────────────
             kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
