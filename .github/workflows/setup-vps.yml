@@ -40,7 +40,7 @@ jobs:
       - name: Setup via SSH
         uses: appleboy/ssh-action@v1.2.0
         env:
-          GIT_TOKEN:          ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          REPO_SSH_URL:       ${{ vars.REPO_SSH_URL }}
           LETSENCRYPT_EMAIL:  ${{ secrets.LETSENCRYPT_EMAIL }}
           SKIP_SSL_HMG:       ${{ inputs.skip_ssl_hmg }}
           SKIP_DNS_CHECK:     ${{ inputs.skip_dns_check }}
@@ -52,14 +52,14 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key:      ${{ secrets.VPS_SSH_KEY }}
           port:     ${{ secrets.VPS_SSH_PORT || '22' }}
-          envs:     GIT_TOKEN,LETSENCRYPT_EMAIL,SKIP_SSL_HMG,SKIP_DNS_CHECK,FORCE_ENV,DOMAIN_PROD,DOMAIN_HMG
+          envs:     REPO_SSH_URL,LETSENCRYPT_EMAIL,SKIP_SSL_HMG,SKIP_DNS_CHECK,FORCE_ENV,DOMAIN_PROD,DOMAIN_HMG
           command_timeout: 30m
           script: |
             set -e
 
             REPO_DIR="/opt/arch-analyzer/prod"
             SCRIPT_DIR="$REPO_DIR/.vps"
-            REPO_SSH="git@github.com:bwasistemas/hackathon.git"
+            REPO_SSH="$REPO_SSH_URL"
 
             # ── Clonar/atualizar repo para ter acesso aos scripts ─────────────
             if [ ! -d "$REPO_DIR/.git" ]; then

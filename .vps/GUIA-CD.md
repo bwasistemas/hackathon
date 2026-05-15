@@ -189,8 +189,9 @@ rodar `setup-env.sh` manualmente antes do primeiro deploy.
 
 Aba **Variables** (nao Secrets) na mesma tela:
 
-| Variable | Padrao | Descricao |
+| Variable | Valor | Descricao |
 |---|---|---|
+| `REPO_SSH_URL` | `git@github.com:bwasistemas/hackathon.git` | URL SSH do repositorio (usado para clone na VPS) |
 | `DOMAIN_PROD` | `archanalyzer.brunoretiro.com.br` | Dominio de producao |
 | `DOMAIN_HMG` | `archanalyzerhmg.brunoretiro.com.br` | Dominio de homologacao |
 | `MAX_REPLICAS` | `5` | Maximo de replicas do ai-service (KEDA) |
