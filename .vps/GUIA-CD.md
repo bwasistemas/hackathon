@@ -80,24 +80,42 @@ Acesse: `github.com/bwasistemas/hackathon → Settings → Secrets and variables
 
 ---
 
-### 1. GH_PAT — Personal Access Token para clone na VPS
+### 1. Deploy Key SSH para clone na VPS
 
-O `GITHUB_TOKEN` gerado automaticamente pelo Actions **nao funciona** para clonar repositorios
-em maquinas externas (VPS via SSH). Um PAT dedicado e obrigatorio.
+O pipeline usa SSH para clonar o repositorio na VPS (`git@github.com:bwasistemas/hackathon.git`).
+Tokens HTTPS (GITHUB_TOKEN, PAT) nao funcionam confiavelmente de maquinas externas.
+A solucao correta e uma chave SSH de deploy.
 
-**Como gerar:**
+**Como configurar (uma vez na VPS):**
 
-1. GitHub → foto do perfil → **Settings** (do perfil, nao do repo)
-2. Menu lateral → **Developer settings** → **Personal access tokens** → **Tokens (classic)**
-3. **Generate new token (classic)**
-4. Preencher:
-   - Note: `deploy archanalyzer` (descricao livre)
-   - Expiration: 90 dias ou "No expiration"
-   - Scopes: marcar apenas **`repo`** (Full control of private repositories)
-5. Clicar **Generate token** e copiar o valor gerado (nao aparece novamente)
-6. No repositorio: **Settings → Secrets → Actions → New repository secret**
-   - Name: `GH_PAT`
-   - Secret: colar o token copiado
+```bash
+# 1. Gerar chave dedicada para o GitHub (na VPS, como o usuario de deploy)
+ssh-keygen -t ed25519 -f ~/.ssh/github_deploy -N ""
+
+# 2. Exibir a chave publica — copiar o conteudo
+cat ~/.ssh/github_deploy.pub
+
+# 3. Configurar SSH para usar essa chave ao acessar github.com
+cat >> ~/.ssh/config << 'EOF'
+Host github.com
+  IdentityFile ~/.ssh/github_deploy
+  StrictHostKeyChecking no
+EOF
+chmod 600 ~/.ssh/config
+
+# 4. Testar a autenticacao
+ssh -T git@github.com
+# Esperado: "Hi bwasistemas/hackathon! You've successfully authenticated..."
+```
+
+**Adicionar a chave publica como Deploy Key no GitHub:**
+
+`github.com/bwasistemas/hackathon → Settings → Deploy keys → Add deploy key`
+- Title: `VPS Deploy Key`
+- Key: colar o conteudo de `~/.ssh/github_deploy.pub`
+- Allow write access: **nao** (leitura e suficiente para clone)
+
+Apos isso, os workflows clonam via SSH automaticamente — sem PAT ou GITHUB_TOKEN.
 
 ---
 

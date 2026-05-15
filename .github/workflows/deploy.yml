@@ -129,7 +129,6 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         env:
-          GIT_TOKEN:                  ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN:               ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR:               ${{ github.actor }}
           IMAGE_PREFIX:               ghcr.io/bwasistemas/hackathon
@@ -161,25 +160,20 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_SSH_PORT || '22' }}
-          envs: GIT_TOKEN,GITHUB_TOKEN,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,BRANCH,DEPLOY_DIR,NAMESPACE,FRONTEND_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
+          envs: GITHUB_TOKEN,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,BRANCH,DEPLOY_DIR,NAMESPACE,FRONTEND_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
           script: |
             set -e
 
-            # Validar token obrigatorio antes de qualquer operacao git
-            if [ -z "$GIT_TOKEN" ]; then
-              echo "ERRO: GIT_TOKEN esta vazio. Configure o secret GH_PAT no repositorio."
-              exit 1
-            fi
+            REPO_SSH="git@github.com:bwasistemas/hackathon.git"
 
             # Atualizar codigo do repositorio
             mkdir -p "$DEPLOY_DIR"
             if [ -d "$DEPLOY_DIR/.git" ]; then
+              git -C "$DEPLOY_DIR" remote set-url origin "$REPO_SSH"
               git -C "$DEPLOY_DIR" fetch origin "$BRANCH"
               git -C "$DEPLOY_DIR" reset --hard "origin/$BRANCH"
             else
-              git clone --branch "$BRANCH" \
-                "https://x-access-token:${GIT_TOKEN}@github.com/bwasistemas/hackathon.git" \
-                "$DEPLOY_DIR"
+              git clone --branch "$BRANCH" "$REPO_SSH" "$DEPLOY_DIR"
             fi
 
             MANIFESTS_DIR="$DEPLOY_DIR/infrastructure/k8s"
