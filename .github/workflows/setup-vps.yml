@@ -67,12 +67,12 @@ jobs:
               sudo mkdir -p "$REPO_DIR"
               sudo chown "$(whoami):$(whoami)" "$REPO_DIR"
               git clone --branch main --depth 1 \
-                "https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/bwasistemas/hackathon.git" \
+                "https://x-access-token:${GITHUB_TOKEN}@github.com/bwasistemas/hackathon.git" \
                 "$REPO_DIR"
             else
               echo "Atualizando repositorio..."
               git -C "$REPO_DIR" remote set-url origin \
-                "https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/bwasistemas/hackathon.git"
+                "https://x-access-token:${GITHUB_TOKEN}@github.com/bwasistemas/hackathon.git"
               git -C "$REPO_DIR" fetch origin main --quiet
               git -C "$REPO_DIR" reset --hard origin/main --quiet
             fi
