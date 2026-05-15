@@ -164,8 +164,9 @@ jobs:
           script: |
             set -e
 
-            # Atualizar código do repositório
-            mkdir -p "$DEPLOY_DIR"
+            # Atualizar codigo do repositorio
+            sudo mkdir -p "$DEPLOY_DIR"
+            sudo chown "$(whoami):$(whoami)" "$DEPLOY_DIR"
             if [ -d "$DEPLOY_DIR/.git" ]; then
               git -C "$DEPLOY_DIR" fetch origin "$BRANCH"
               git -C "$DEPLOY_DIR" reset --hard "origin/$BRANCH"
