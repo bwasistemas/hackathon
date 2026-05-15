@@ -35,7 +35,12 @@ Return a structured analysis in Portuguese."""
 
 class LlmInputSanitizer:
     def __init__(self, model: str):
-        self.encoding = tiktoken.encoding_for_model(model)
+        try:
+            self.encoding = tiktoken.encoding_for_model(model)
+        except KeyError:
+            # tiktoken only knows OpenAI model names; third-party models
+            # (OpenRouter, Deepseek, etc.) use the same cl100k_base tokenizer.
+            self.encoding = tiktoken.get_encoding("cl100k_base")
         self.MAX_TOKENS = 6000  # Leave buffer for response
     
     def sanitize_and_validate(self, text: str) -> str:
