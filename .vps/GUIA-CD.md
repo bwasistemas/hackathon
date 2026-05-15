@@ -161,7 +161,7 @@ ssh -i ~/.ssh/deploy_key USUARIO@IP_DA_VPS "echo conexao ok"
 
 | Secret | Descricao |
 |---|---|
-| `GH_PAT` | Personal Access Token (escopo `repo`) — para git clone/fetch na VPS |
+| `GH_DEPLOY_KEY` | Chave privada SSH de deploy (par gerado localmente, publica adicionada como Deploy Key no GitHub) |
 | `VPS_HOST` | IP publico da VPS |
 | `VPS_USER` | Usuario SSH da VPS (`ubuntu`, `root`, etc.) |
 | `VPS_SSH_KEY` | Conteudo da chave privada SSH (sem passphrase) |

@@ -41,6 +41,7 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           REPO_SSH_URL:       ${{ vars.REPO_SSH_URL }}
+          GH_DEPLOY_KEY:      ${{ secrets.GH_DEPLOY_KEY }}
           LETSENCRYPT_EMAIL:  ${{ secrets.LETSENCRYPT_EMAIL }}
           SKIP_SSL_HMG:       ${{ inputs.skip_ssl_hmg }}
           SKIP_DNS_CHECK:     ${{ inputs.skip_dns_check }}
@@ -52,14 +53,22 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key:      ${{ secrets.VPS_SSH_KEY }}
           port:     ${{ secrets.VPS_SSH_PORT || '22' }}
-          envs:     REPO_SSH_URL,LETSENCRYPT_EMAIL,SKIP_SSL_HMG,SKIP_DNS_CHECK,FORCE_ENV,DOMAIN_PROD,DOMAIN_HMG
+          envs:     REPO_SSH_URL,GH_DEPLOY_KEY,LETSENCRYPT_EMAIL,SKIP_SSL_HMG,SKIP_DNS_CHECK,FORCE_ENV,DOMAIN_PROD,DOMAIN_HMG
           command_timeout: 30m
           script: |
             set -e
 
-            # Garantir que github.com esta no known_hosts
+            # Configurar chave SSH de deploy para o GitHub
             mkdir -p ~/.ssh
+            echo "$GH_DEPLOY_KEY" > ~/.ssh/github_deploy
+            chmod 600 ~/.ssh/github_deploy
             ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+            grep -q "Host github.com" ~/.ssh/config 2>/dev/null || cat >> ~/.ssh/config << 'SSHEOF'
+Host github.com
+  IdentityFile ~/.ssh/github_deploy
+  StrictHostKeyChecking no
+SSHEOF
+            chmod 600 ~/.ssh/config
 
             REPO_DIR="/opt/arch-analyzer/prod"
             SCRIPT_DIR="$REPO_DIR/.vps"

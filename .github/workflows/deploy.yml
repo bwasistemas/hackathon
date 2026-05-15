@@ -130,6 +130,7 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           REPO_SSH_URL:               ${{ vars.REPO_SSH_URL }}
+          GH_DEPLOY_KEY:              ${{ secrets.GH_DEPLOY_KEY }}
           GITHUB_TOKEN:               ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR:               ${{ github.actor }}
           IMAGE_PREFIX:               ghcr.io/bwasistemas/hackathon
@@ -161,13 +162,21 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_SSH_PORT || '22' }}
-          envs: REPO_SSH_URL,GITHUB_TOKEN,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,BRANCH,DEPLOY_DIR,NAMESPACE,FRONTEND_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
+          envs: REPO_SSH_URL,GH_DEPLOY_KEY,GITHUB_TOKEN,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,BRANCH,DEPLOY_DIR,NAMESPACE,FRONTEND_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
           script: |
             set -e
 
-            # Garantir que github.com esta no known_hosts
+            # Configurar chave SSH de deploy para o GitHub
             mkdir -p ~/.ssh
+            echo "$GH_DEPLOY_KEY" > ~/.ssh/github_deploy
+            chmod 600 ~/.ssh/github_deploy
             ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+            grep -q "Host github.com" ~/.ssh/config 2>/dev/null || cat >> ~/.ssh/config << 'SSHEOF'
+Host github.com
+  IdentityFile ~/.ssh/github_deploy
+  StrictHostKeyChecking no
+SSHEOF
+            chmod 600 ~/.ssh/config
 
             REPO_SSH="$REPO_SSH_URL"
 
