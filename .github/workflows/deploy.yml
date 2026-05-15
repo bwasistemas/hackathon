@@ -165,6 +165,12 @@ jobs:
           script: |
             set -e
 
+            # Validar token obrigatorio antes de qualquer operacao git
+            if [ -z "$GIT_TOKEN" ]; then
+              echo "ERRO: GIT_TOKEN esta vazio. Configure o secret GH_PAT no repositorio."
+              exit 1
+            fi
+
             # Atualizar codigo do repositorio
             mkdir -p "$DEPLOY_DIR"
             if [ -d "$DEPLOY_DIR/.git" ]; then

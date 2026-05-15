@@ -57,6 +57,14 @@ jobs:
           script: |
             set -e
 
+            # Validar token obrigatorio antes de qualquer operacao git
+            if [ -z "$GIT_TOKEN" ]; then
+              echo "ERRO: GIT_TOKEN esta vazio."
+              echo "Configure o secret GH_PAT no repositorio GitHub (escopo repo)."
+              echo "Consulte o GUIA-CD.md, secao 'GH_PAT — Personal Access Token'."
+              exit 1
+            fi
+
             REPO_DIR="/opt/arch-analyzer/prod"
             SCRIPT_DIR="$REPO_DIR/.vps"
 
