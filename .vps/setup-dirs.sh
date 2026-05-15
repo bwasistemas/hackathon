@@ -25,8 +25,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Monta URL (com ou sem token para repo privado)
-if [ -n "$GITHUB_TOKEN" ]; then
+# Prioridade: SSH (REPO_SSH_URL) > token HTTPS > HTTPS publico
+# REPO_SSH_URL vem da variavel do GitHub (Actions) ou do ambiente
+if [ -n "${REPO_SSH_URL:-}" ]; then
+    CLONE_URL="$REPO_SSH_URL"
+elif [ -n "$GITHUB_TOKEN" ]; then
     CLONE_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/bwasistemas/hackathon.git"
 else
     CLONE_URL="$REPO_URL"

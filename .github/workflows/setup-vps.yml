@@ -10,8 +10,8 @@ name: Setup VPS (first-time)
 #   VPS_SSH_PORT       — porta SSH (opcional; padrão: 22)
 #   LETSENCRYPT_EMAIL  — email para certificados Let's Encrypt
 #
-# Para clone de repo privado, o GITHUB_TOKEN do Actions já é suficiente
-# (tem permissão contents:read por padrão).
+# Para clone do repositorio privado usa GH_DEPLOY_KEY (deploy key SSH).
+# O REPO_SSH_URL deve estar configurado como variavel do repositorio.
 
 on:
   workflow_dispatch:
@@ -65,21 +65,36 @@ jobs:
             ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
             export GIT_SSH_COMMAND="ssh -i ~/.ssh/github_deploy -o StrictHostKeyChecking=no"
 
-            REPO_DIR="/opt/arch-analyzer/prod"
-            SCRIPT_DIR="$REPO_DIR/.vps"
+            BASE_DIR="/opt/arch-analyzer"
+            PROD_DIR="$BASE_DIR/prod"
+            HMG_DIR="$BASE_DIR/hmg"
+            SCRIPT_DIR="$PROD_DIR/.vps"
             REPO_SSH="$REPO_SSH_URL"
 
-            # ── Clonar/atualizar repo para ter acesso aos scripts ─────────────
-            if [ ! -d "$REPO_DIR/.git" ]; then
-              echo "Clonando repositorio pela primeira vez..."
-              sudo mkdir -p "$REPO_DIR"
-              sudo chown "$(whoami):$(whoami)" "$REPO_DIR"
-              git clone --branch main --depth 1 "$REPO_SSH" "$REPO_DIR"
+            # Garantir que o diretorio pai pertence ao usuario SSH
+            # (necessario para que o deploy possa criar /opt/arch-analyzer/hmg)
+            sudo mkdir -p "$BASE_DIR" "$PROD_DIR" "$HMG_DIR"
+            sudo chown -R "$(whoami):$(whoami)" "$BASE_DIR"
+
+            # ── Clonar/atualizar repo (prod = scripts de setup; hmg = ambiente HMG) ─
+            if [ ! -d "$PROD_DIR/.git" ]; then
+              echo "Clonando repositorio prod (main)..."
+              git clone --branch main --depth 1 "$REPO_SSH" "$PROD_DIR"
             else
-              echo "Atualizando repositorio..."
-              git -C "$REPO_DIR" remote set-url origin "$REPO_SSH"
-              git -C "$REPO_DIR" fetch origin main --quiet
-              git -C "$REPO_DIR" reset --hard origin/main --quiet
+              echo "Atualizando prod para main..."
+              git -C "$PROD_DIR" remote set-url origin "$REPO_SSH"
+              git -C "$PROD_DIR" fetch origin main --quiet
+              git -C "$PROD_DIR" reset --hard origin/main --quiet
+            fi
+
+            if [ ! -d "$HMG_DIR/.git" ]; then
+              echo "Clonando repositorio hmg..."
+              git clone --branch hmg --depth 1 "$REPO_SSH" "$HMG_DIR"
+            else
+              echo "Atualizando hmg..."
+              git -C "$HMG_DIR" remote set-url origin "$REPO_SSH"
+              git -C "$HMG_DIR" fetch origin hmg --quiet
+              git -C "$HMG_DIR" reset --hard origin/hmg --quiet
             fi
 
             sudo chmod +x "$SCRIPT_DIR"/*.sh
