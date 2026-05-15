@@ -11,17 +11,17 @@ GitHub Actions (CI/CD)
 VPS                                                                      │
 ├─ Nginx (80/443) ← SSL Let's Encrypt                                   │
 │   ├─ archanalyzer.brunoretiro.com.br/           → Kind NodePort 30080 (arch-prod)
-│   ├─ archanalyzerhmg.brunoretiro.com.br/       → Kind NodePort 30081 (arch-hmg)
+│   ├─ archanalyzerhmg.brunoretiro.com.br/        → Kind NodePort 30081 (arch-hmg)
 │   ├─ archanalyzer.brunoretiro.com.br/portainer/ → Portainer :9000
 │   └─ archanalyzer.brunoretiro.com.br/k8s/       → Headlamp  :30444
 │
 ├─ Kind cluster (2 workers)
-│   ├─ Namespace arch-prod (produção — branch main)
+│   ├─ Namespace arch-prod (producao — branch main)
 │   │   frontend:30080, upload:8001, ai:8003, report:8004
 │   │   postgres:5432, rabbitmq:5672, minio:9000, prometheus:9090, grafana:3000
 │   │
-│   └─ Namespace arch-hmg (homologação — branch hmg)
-│       frontend:30081 (host), mesmos serviços internos
+│   └─ Namespace arch-hmg (homologacao — branch hmg)
+│       frontend:30081 (host), mesmos servicos internos
 │
 ├─ KEDA v2.14 — autoscaling do ai-service
 │   ScaledObject: min=1, max=MAX_REPLICAS, trigger=queue diagram.upload
@@ -31,48 +31,31 @@ VPS                                                                      │
 
 ---
 
-## O deploy usa Kubernetes (Kind)?
-
-**Sim.** O deploy usa **kubectl aplicando manifests no cluster Kind** da própria VPS.
-
-O Nginx aponta para NodePorts do Kind:
-- Produção: `localhost:30080` (NodePort do frontend no namespace `arch-prod`)
-- Homologação: `localhost:30081` (NodePort do frontend no namespace `arch-hmg`)
-
-Os namespaces `arch-prod` e `arch-hmg` separam completamente os ambientes dentro do mesmo cluster.
-
----
-
 ## Autoscaling com KEDA
 
 O `ai-service` escala automaticamente com base na profundidade da fila `diagram.upload` no RabbitMQ.
 
-| Variável GitHub | Padrão | Descrição |
+| Variavel GitHub | Padrao | Descricao |
 |---|---|---|
-| `MAX_REPLICAS` | `5` | Máximo de réplicas do ai-service |
-| `QUEUE_MESSAGES_PER_REPLICA` | `5` | Mensagens na fila para subir 1 réplica |
+| `MAX_REPLICAS` | `5` | Maximo de replicas do ai-service |
+| `QUEUE_MESSAGES_PER_REPLICA` | `5` | Mensagens na fila para subir 1 replica |
 
-**Como funciona:**
-- Fila vazia → 1 réplica (mínimo)
-- 5 mensagens → 1 réplica, 10 mensagens → 2 réplicas, ..., ≥ 25 mensagens → 5 réplicas
+- Fila vazia → 1 replica (minimo)
+- 5 mensagens → 1 replica, 10 → 2, ... >= 25 → 5 replicas
 - Cooldown de 60 segundos antes de escalar para baixo
-
-O KEDA lê a fila via AMQP com a secret `rabbitmq-keda-auth` (injetada a cada deploy).
 
 ---
 
-## As mudanças quebram o desenvolvimento local?
+## Desenvolvimento local
 
-**Não.** Para desenvolvimento local, continue usando Docker Compose:
+Para desenvolvimento local, continue usando Docker Compose — nenhuma alteracao necessaria:
 
 ```bash
 cd infrastructure
 docker compose up
 ```
 
-O `docker-compose.yml` usa variáveis com valores padrão (`${PORT:-default}`) e continua funcionando sem qualquer mudança.
-
-Os manifests Kubernetes em `infrastructure/k8s/` são usados **apenas** pelo pipeline de deploy.
+Os manifests em `infrastructure/k8s/` sao usados **apenas** pelo pipeline de deploy.
 
 ---
 
@@ -80,131 +63,241 @@ Os manifests Kubernetes em `infrastructure/k8s/` são usados **apenas** pelo pip
 
 | Script | Responsabilidade |
 |---|---|
-| `setup-vps.sh` | Orchestrador — instala Docker, Kind, kubectl, KEDA, Nginx, SSL, Portainer, Headlamp |
-| `setup-deploy.sh` | Orchestrador de CD — clona repo, cria .env, configura Nginx, gera SSL HMG |
-| `setup-dirs.sh` | Clona/atualiza repositório nos diretórios de deploy |
-| `setup-env.sh` | Cria arquivos `.env` para prod e hmg (prompts mínimos) |
+| `setup-vps.sh` | Orquestrador — instala Docker, Kind, kubectl, KEDA, Nginx, SSL, Portainer, Headlamp |
+| `setup-deploy.sh` | Orquestrador de CD — clona repo, configura Nginx, gera SSL HMG |
+| `setup-dirs.sh` | Clona/atualiza repositorio nos diretorios de deploy e ajusta permissoes |
+| `setup-env.sh` | Cria arquivos `.env` para prod e hmg |
 | `setup-nginx.sh` | Configura Nginx e recarrega |
 | `setup-ssl-hmg.sh` | Gera certificado SSL para `archanalyzerhmg.brunoretiro.com.br` |
-| `lib.sh` | Funções compartilhadas (logging, cores, utilitários) |
-| `nginx-archanalyzer.conf` | Template Nginx (setup-nginx.sh substitui os placeholders) |
-
-**Uso rápido (tudo de uma vez):**
-```bash
-sudo ./setup-vps.sh seu@email.com
-```
+| `lib.sh` | Funcoes compartilhadas (logging, cores, utilitarios) |
+| `nginx-archanalyzer.conf` | Template Nginx (placeholders substituidos pelo setup-nginx.sh) |
 
 ---
 
-## Secrets e Variables necessários no GitHub
+## Configuracao de Secrets e Variables no GitHub
 
 Acesse: `github.com/bwasistemas/hackathon → Settings → Secrets and variables → Actions`
 
-### Secrets (valores sensíveis)
+---
 
-| Secret | Descrição |
-|---|---|
-| `GH_PAT` | Personal Access Token do GitHub (escopo `repo`) — necessario para clonar o repositorio na VPS |
-| `VPS_HOST` | IP publico da VPS |
-| `VPS_USER` | usuario SSH (`root` ou `ubuntu`) |
-| `VPS_SSH_KEY` | conteudo da chave privada SSH (sem passphrase) |
-| `VPS_SSH_PORT` | porta SSH — omita se for a 22 |
-| `LETSENCRYPT_EMAIL` | email para certificados Let's Encrypt |
-| `POSTGRES_USER` | usuario do PostgreSQL |
-| `POSTGRES_PASSWORD` | senha do PostgreSQL |
-| `RABBITMQ_USER` | usuario do RabbitMQ |
-| `RABBITMQ_PASSWORD` | senha do RabbitMQ |
-| `OPENAI_API_KEY` | chave da API OpenAI / OpenRouter |
-| `JWT_SECRET_KEY` | chave de assinatura dos JWTs (>= 48 chars aleatorios) |
-| `ADMIN_USER` | usuario admin da aplicacao |
-| `ADMIN_PASSWORD` | senha do usuario admin da aplicacao |
-| `MINIO_ACCESS_KEY` | usuario root do MinIO (MINIO_ROOT_USER) |
-| `MINIO_SECRET_KEY` | senha root do MinIO (MINIO_ROOT_PASSWORD) |
-| `GRAFANA_USER` | usuario do Grafana |
-| `GRAFANA_PASSWORD` | senha do Grafana |
+### 1. GH_PAT — Personal Access Token para clone na VPS
 
-> **Como criar o `GH_PAT`:**
-> GitHub → Settings do perfil → Developer settings → Personal access tokens → Tokens (classic)
-> → Generate new token → escopo `repo` → copiar o token → adicionar como secret `GH_PAT`.
->
-> O `GITHUB_TOKEN` automatico do Actions nao funciona para clonar repositorios em maquinas
-> externas (VPS). O `GH_PAT` resolve isso e e usado exclusivamente para o `git clone/fetch` na VPS.
->
-> O pipeline cria/atualiza os Kubernetes Secrets a cada deploy com esses valores,
-> entao **nao e preciso rodar `setup-env.sh` manualmente** antes do primeiro deploy.
+O `GITHUB_TOKEN` gerado automaticamente pelo Actions **nao funciona** para clonar repositorios
+em maquinas externas (VPS via SSH). Um PAT dedicado e obrigatorio.
 
-### Variables (valores não sensíveis)
+**Como gerar:**
 
-Na mesma tela, aba **Variables** (não Secrets):
+1. GitHub → foto do perfil → **Settings** (do perfil, nao do repo)
+2. Menu lateral → **Developer settings** → **Personal access tokens** → **Tokens (classic)**
+3. **Generate new token (classic)**
+4. Preencher:
+   - Note: `deploy archanalyzer` (descricao livre)
+   - Expiration: 90 dias ou "No expiration"
+   - Scopes: marcar apenas **`repo`** (Full control of private repositories)
+5. Clicar **Generate token** e copiar o valor gerado (nao aparece novamente)
+6. No repositorio: **Settings → Secrets → Actions → New repository secret**
+   - Name: `GH_PAT`
+   - Secret: colar o token copiado
 
-| Variable | Padrão | Descrição |
+---
+
+### 2. VPS_SSH_KEY — Chave SSH para o CI acessar a VPS
+
+O pipeline conecta na VPS via SSH para fazer o deploy. E necessario uma chave dedicada.
+
+**Como gerar e configurar:**
+
+```bash
+# 1. Gerar par de chaves (sem passphrase — obrigatorio para CI nao-interativo)
+ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/deploy_key -N ""
+
+# 2. Adicionar a chave PUBLICA na VPS (substitua USUARIO e IP)
+ssh-copy-id -i ~/.ssh/deploy_key.pub USUARIO@IP_DA_VPS
+
+# Ou manualmente na VPS:
+cat ~/.ssh/deploy_key.pub >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+chmod 700 ~/.ssh
+
+# 3. Verificar que a conexao funciona antes de configurar o secret
+ssh -i ~/.ssh/deploy_key USUARIO@IP_DA_VPS "echo conexao ok"
+```
+
+**Adicionar no GitHub:**
+
+- `VPS_SSH_KEY`: conteudo completo de `~/.ssh/deploy_key` (chave PRIVADA)
+  - Incluir as linhas `-----BEGIN OPENSSH PRIVATE KEY-----` e `-----END OPENSSH PRIVATE KEY-----`
+  - Colar exatamente como saiu do `cat ~/.ssh/deploy_key` — sem espacos extras
+
+**Sintomas de configuracao errada:**
+
+| Erro | Causa | Solucao |
 |---|---|---|
-| `DOMAIN_PROD` | `archanalyzer.brunoretiro.com.br` | Domínio de produção |
-| `DOMAIN_HMG` | `archanalyzerhmg.brunoretiro.com.br` | Domínio de homologação |
-| `MAX_REPLICAS` | `5` | Máximo de réplicas do ai-service (KEDA) |
-| `QUEUE_MESSAGES_PER_REPLICA` | `5` | Mensagens por réplica para escala do ai-service |
+| `ssh: no key found` | Secret vazio ou formato invalido | Recriar o secret com o conteudo completo da chave |
+| `attempted methods [none], no supported methods remain` | Mesma causa acima | Idem |
+| `attempted methods [none publickey], no supported methods remain` | Chave publica nao esta no `authorized_keys` da VPS | Rodar `ssh-copy-id` conforme acima |
+
+---
+
+### 3. Tabela completa de Secrets
+
+| Secret | Descricao |
+|---|---|
+| `GH_PAT` | Personal Access Token (escopo `repo`) — para git clone/fetch na VPS |
+| `VPS_HOST` | IP publico da VPS |
+| `VPS_USER` | Usuario SSH da VPS (`ubuntu`, `root`, etc.) |
+| `VPS_SSH_KEY` | Conteudo da chave privada SSH (sem passphrase) |
+| `VPS_SSH_PORT` | Porta SSH — omitir se for a padrao 22 |
+| `LETSENCRYPT_EMAIL` | Email para notificacoes e renovacao dos certs SSL |
+| `POSTGRES_USER` | Usuario do PostgreSQL |
+| `POSTGRES_PASSWORD` | Senha do PostgreSQL |
+| `RABBITMQ_USER` | Usuario do RabbitMQ |
+| `RABBITMQ_PASSWORD` | Senha do RabbitMQ |
+| `OPENAI_API_KEY` | Chave da API OpenAI / OpenRouter |
+| `JWT_SECRET_KEY` | Chave de assinatura dos JWTs (minimo 48 chars aleatorios) |
+| `ADMIN_USER` | Usuario admin da aplicacao |
+| `ADMIN_PASSWORD` | Senha do usuario admin da aplicacao |
+| `MINIO_ACCESS_KEY` | Usuario root do MinIO (MINIO_ROOT_USER) |
+| `MINIO_SECRET_KEY` | Senha root do MinIO (MINIO_ROOT_PASSWORD) |
+| `GRAFANA_USER` | Usuario do Grafana |
+| `GRAFANA_PASSWORD` | Senha do Grafana |
+
+O pipeline cria/atualiza os Kubernetes Secrets a cada deploy — nao e necessario
+rodar `setup-env.sh` manualmente antes do primeiro deploy.
+
+---
+
+### 4. Tabela de Variables (valores nao sensiveis)
+
+Aba **Variables** (nao Secrets) na mesma tela:
+
+| Variable | Padrao | Descricao |
+|---|---|---|
+| `DOMAIN_PROD` | `archanalyzer.brunoretiro.com.br` | Dominio de producao |
+| `DOMAIN_HMG` | `archanalyzerhmg.brunoretiro.com.br` | Dominio de homologacao |
+| `MAX_REPLICAS` | `5` | Maximo de replicas do ai-service (KEDA) |
+| `QUEUE_MESSAGES_PER_REPLICA` | `5` | Mensagens por replica para escala |
 | `POSTGRES_DB` | `fiap` | Nome do banco de dados |
 | `MINIO_BUCKET` | `fiap` | Nome do bucket MinIO |
-| `TZ` | `America/Sao_Paulo` | Fuso horário dos containers |
-
-**Gerar chave SSH dedicada para o CI:**
-```bash
-ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/deploy_key -N ""
-# Copiar chave pública para a VPS:
-ssh-copy-id -i ~/.ssh/deploy_key.pub USUARIO@IP_DA_VPS
-# Conteúdo de ~/.ssh/deploy_key vai no secret VPS_SSH_KEY
-```
+| `TZ` | `America/Sao_Paulo` | Fuso horario dos containers |
 
 ---
 
 ## Fluxo de primeiro setup (passo a passo)
 
 ```
-1. DNS     : criar registro A  archanalyzer.brunoretiro.com.br → IP da VPS
+1. DNS     : criar registro A  archanalyzer.brunoretiro.com.br    → IP da VPS
              criar registro A  archanalyzerhmg.brunoretiro.com.br → IP da VPS
-2. GitHub  : criar os secrets e variables acima
-3. VPS     : executar ./setup-vps.sh (instala Kind, KEDA, Nginx, SSL, Portainer, Headlamp)
-             OU acionar o workflow "Setup VPS (first-time)" manualmente
-4. GitHub  : push na branch main → deploy automático de produção (namespace arch-prod)
-5. GitHub  : push na branch hmg  → deploy automático de homologação (namespace arch-hmg)
+
+2. GitHub  : configurar todos os Secrets e Variables listados acima
+             (GH_PAT e VPS_SSH_KEY sao obrigatorios para o pipeline funcionar)
+
+3. Setup   : acionar o workflow "Setup VPS (first-time)" no GitHub Actions
+             GitHub → Actions → "Setup VPS (first-time)" → Run workflow
+             - Instala automaticamente: Docker, Kind, kubectl, KEDA, Nginx, SSL, Portainer, Headlamp
+             - Se o DNS do dominio HMG ainda nao propagou: marcar "Pular SSL HMG"
+
+4. Deploy  : push na branch main → deploy automatico em producao (namespace arch-prod)
+             push na branch hmg  → deploy automatico em homologacao (namespace arch-hmg)
 ```
 
-### Opções do workflow "Setup VPS (first-time)"
+### Opcoes do workflow "Setup VPS (first-time)"
 
-| Input | Padrão | Quando usar |
+| Input | Padrao | Quando usar |
 |---|---|---|
-| Pular SSL HMG | false | DNS ainda não propagou |
-| Pular verificação DNS | false | Tem certeza que o DNS está certo |
-| Recriar .env | false | Precisa reconfigurar credenciais |
+| Pular SSL HMG | false | DNS de `archanalyzerhmg` ainda nao propagou |
+| Pular verificacao DNS | false | Tem certeza que o DNS esta correto |
+| Recriar .env | false | Precisa reconfigurar credenciais na VPS |
+
+### O workflow detecta o que ja esta instalado
+
+O "Setup VPS (first-time)" verifica se o Kind ja esta instalado antes de rodar o `setup-vps.sh`.
+Pode ser acionado novamente a qualquer momento sem risco de duplicacao.
 
 ---
 
-## Solução de problemas comuns
+## Permissoes de diretorio na VPS
 
-**Deploy falha com "namespace not found"**
+O pipeline cria os diretorios de deploy em `/opt/arch-analyzer/prod` e `/opt/arch-analyzer/hmg`.
+O `setup-dirs.sh` (chamado pelo setup-vps.sh) cria esses diretorios como root e transfere
+a propriedade automaticamente para o usuario SSH (`$SUDO_USER`).
+
+Se precisar corrigir manualmente (ex.: diretorio criado antes do fix):
+
 ```bash
-# Execute o setup na VPS:
-sudo bash /opt/arch-analyzer/prod/.vps/setup-vps.sh
+# Na VPS, substitua SEU_USUARIO pelo valor do secret VPS_USER
+sudo chown -R SEU_USUARIO:SEU_USUARIO /opt/arch-analyzer
 ```
 
-**Nginx retorna 502**
+**Por que o deploy nao usa sudo:**
+O `mkdir -p "$DEPLOY_DIR"` no pipeline nao usa sudo porque o diretorio pai ja pertence
+ao usuario SSH apos o setup. Se aparecer `Permission denied` no mkdir, rode o comando
+acima na VPS e re-execute o deploy.
+
+---
+
+## Solucao de problemas comuns
+
+### SSH: `ssh: no key found`
+O secret `VPS_SSH_KEY` esta vazio ou com formato invalido.
+Recriar o secret colando o conteudo completo da chave privada (incluindo header e footer).
+
+### SSH: `attempted methods [publickey], no supported methods remain`
+A chave publica nao esta no `authorized_keys` da VPS para o `VPS_USER`.
 ```bash
-# Verificar se os pods estão rodando:
+ssh-copy-id -i ~/.ssh/deploy_key.pub VPS_USER@VPS_HOST
+```
+
+### Git clone: `Invalid username or token`
+O `GITHUB_TOKEN` automatico do Actions nao funciona para clone em maquinas externas.
+Criar um PAT (escopo `repo`) e adicionar como secret `GH_PAT` conforme secao 1 acima.
+
+### mkdir: `Permission denied` em `/opt/arch-analyzer`
+O usuario SSH nao tem permissao de escrita no diretorio. Corrigir na VPS:
+```bash
+sudo chown -R VPS_USER:VPS_USER /opt/arch-analyzer
+```
+
+### kubectl: `dial tcp [::1]:8080: connect: connection refused`
+O cluster Kind nao esta instalado ou nao esta rodando. Solucao: acionar o workflow
+"Setup VPS (first-time)" ou rodar na VPS:
+```bash
+sudo bash /opt/arch-analyzer/prod/.vps/setup-vps.sh SEU_EMAIL
+```
+
+### kubectl: `error validating data: failed to download openapi`
+Erro de validacao OpenAPI ao aplicar manifests. O pipeline ja usa `--validate=false`
+em todos os `kubectl apply` para contornar isso. Se aparecer em execucao manual:
+```bash
+kubectl apply --validate=false -f manifest.yaml
+```
+
+### Deploy falha com "namespace not found"
+```bash
+# Criar namespace manualmente:
+kubectl create namespace arch-prod
+kubectl create namespace arch-hmg
+# Depois re-executar o deploy
+```
+
+### Nginx retorna 502
+```bash
+# Verificar se os pods estao rodando:
 kubectl get pods -n arch-prod
 # Verificar logs do frontend:
 kubectl logs -n arch-prod deployment/frontend
 ```
 
-**GHCR: permission denied ao fazer pull**
+### GHCR: permission denied ao fazer pull manual
 ```bash
-# O token expira com o workflow. Para pull manual, use um PAT:
-echo "ghp_SEU_PAT" | docker login ghcr.io -u SEU_USUARIO --password-stdin
+# O GITHUB_TOKEN expira com o workflow. Para pull manual, usar o GH_PAT:
+echo "ghp_SEU_GH_PAT" | docker login ghcr.io -u SEU_USUARIO --password-stdin
 kubectl create secret docker-registry ghcr-pull-secret \
   --docker-server=ghcr.io --docker-username=SEU_USUARIO \
-  --docker-password=ghp_SEU_PAT -n arch-prod --dry-run=client -o yaml | kubectl apply -f -
+  --docker-password=ghp_SEU_GH_PAT -n arch-prod --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-**KEDA não está escalando**
+### KEDA nao esta escalando
 ```bash
 # Verificar estado do ScaledObject:
 kubectl describe scaledobject ai-service-scaler -n arch-prod
@@ -212,7 +305,7 @@ kubectl describe scaledobject ai-service-scaler -n arch-prod
 kubectl exec -n arch-prod statefulset/rabbitmq -- rabbitmqctl list_queues
 ```
 
-**Ver logs do ai-service**
+### Ver logs do ai-service
 ```bash
 kubectl logs -n arch-prod deployment/ai-service --follow
 # Verificar autoscaling:
