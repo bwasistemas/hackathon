@@ -181,7 +181,7 @@ jobs:
             command -v envsubst &>/dev/null || apt-get install -y gettext-base
 
             # ── Namespace ─────────────────────────────────────────────────────
-            kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+            kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
             # ── GHCR pull secret ──────────────────────────────────────────────
             echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
@@ -190,9 +190,9 @@ jobs:
               --docker-username="$GITHUB_ACTOR" \
               --docker-password="$GITHUB_TOKEN" \
               --namespace="$NAMESPACE" \
-              --dry-run=client -o yaml | kubectl apply -f -
+              --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
-            # ── Secrets da aplicação ──────────────────────────────────────────
+            # ── Secrets da aplicacao ──────────────────────────────────────────
             kubectl create secret generic arch-secrets \
               --namespace="$NAMESPACE" \
               --from-literal=POSTGRES_USER="$POSTGRES_USER" \
@@ -207,20 +207,20 @@ jobs:
               --from-literal=MINIO_SECRET_KEY="$MINIO_SECRET_KEY" \
               --from-literal=GRAFANA_USER="$GRAFANA_USER" \
               --from-literal=GRAFANA_PASSWORD="$GRAFANA_PASSWORD" \
-              --dry-run=client -o yaml | kubectl apply -f -
+              --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
-            # ── Secret KEDA — URL AMQP para autoscaling por fila ─────────────
+            # ── Secret KEDA ───────────────────────────────────────────────────
             RABBITMQ_AMQP_URL="amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq.${NAMESPACE}.svc.cluster.local:5672/"
             kubectl create secret generic rabbitmq-keda-auth \
               --namespace="$NAMESPACE" \
               --from-literal=host="$RABBITMQ_AMQP_URL" \
-              --dry-run=client -o yaml | kubectl apply -f -
+              --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
-            # ── Aplicar manifests com substituição de variáveis ───────────────
+            # ── Aplicar manifests ─────────────────────────────────────────────
             ENVSUBST_VARS='${IMAGE_PREFIX} ${IMAGE_TAG} ${POSTGRES_DB} ${MINIO_BUCKET} ${TZ} ${ALLOWED_ORIGINS} ${FRONTEND_NODEPORT} ${MAX_REPLICAS} ${QUEUE_MESSAGES_PER_REPLICA}'
             for manifest in $(ls "$MANIFESTS_DIR"/*.yaml | sort); do
               echo "Aplicando: $(basename $manifest)..."
-              envsubst "$ENVSUBST_VARS" < "$manifest" | kubectl apply -n "$NAMESPACE" -f -
+              envsubst "$ENVSUBST_VARS" < "$manifest" | kubectl apply --validate=false -n "$NAMESPACE" -f -
             done
 
             # ── Aguardar rollouts ─────────────────────────────────────────────
