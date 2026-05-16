@@ -872,7 +872,7 @@ main() {
         echo -e "${CYAN}Prosseguir com o setup de CD (Nginx da aplicação + SSL HMG)?${NC}"
         read -rp "  [s/N] " resp
         if [[ "$resp" =~ ^[Ss]$ ]]; then
-            bash "$DEPLOY_SCRIPT" --skip-ssl-hmg
+            bash "$DEPLOY_SCRIPT" --email "$EMAIL" --skip-ssl-hmg
         else
             echo ""
             echo -e "${YELLOW}Para finalizar o setup de CD manualmente:${NC}"
