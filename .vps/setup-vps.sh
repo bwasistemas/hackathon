@@ -813,7 +813,7 @@ show_access() {
 ################################################################################
 
 main() {
-    clear
+    clear 2>/dev/null || true
     hdr "🚀 Setup VPS — Versão 8.0"
     check_root
     check_internet

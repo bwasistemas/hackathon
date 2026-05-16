@@ -63,7 +63,7 @@ fi
 # Header
 ################################################################################
 
-clear
+clear 2>/dev/null || true
 echo -e "${BOLD}${CYAN}"
 echo "╔══════════════════════════════════════════════════════╗"
 echo "║      Arch Analyzer — Setup CD na VPS                ║"
@@ -154,7 +154,7 @@ echo -e "     POSTGRES_PASSWORD      <senha forte>"
 echo -e "     RABBITMQ_PASSWORD      <senha forte>"
 echo -e "     OPENAI_API_KEY         sk-..."
 echo -e "     JWT_SECRET_KEY         <48+ chars aleatórios>"
-echo -e "     ADMIN_PASSWORD         <senha forte>"
+echo -e "     ADMIN_PASSWORD         $ADMIN"
 echo -e "     MINIO_SECRET_KEY       <senha forte>"
 echo -e "     GRAFANA_PASSWORD       <senha forte>"
 echo ""
