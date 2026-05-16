@@ -199,54 +199,10 @@ jobs:
             export GIT_SSH_COMMAND="ssh -i ~/.ssh/github_deploy -o StrictHostKeyChecking=no"
 
             REPO_SSH="$REPO_SSH_URL"
-            PROD_DIR="/opt/arch-analyzer/prod"
 
-            # ── Garantir repositorios prod (main) e hmg atualizados ──────────
-            # setup-vps.yml cria /opt/arch-analyzer com ownership do usuario SSH.
-            # Operacoes de git nao precisam de sudo; setup de Nginx/.env sim.
-            BASE_ARCH="/opt/arch-analyzer"
-            PROD_DIR="$BASE_ARCH/prod"
-            HMG_DIR="$BASE_ARCH/hmg"
-
-            if [ ! -d "$BASE_ARCH" ]; then
-              echo "ERRO: $BASE_ARCH nao existe."
-              echo "Execute o workflow 'Setup VPS (first-time)' antes do primeiro deploy."
-              exit 1
-            fi
-
-            # prod (main) — scripts de setup ficam em prod/.vps/
-            if [ -d "$PROD_DIR/.git" ]; then
-              git -C "$PROD_DIR" remote set-url origin "$REPO_SSH" 2>/dev/null || true
-              git -C "$PROD_DIR" fetch origin main --quiet
-              git -C "$PROD_DIR" reset --hard origin/main --quiet
-            else
-              echo "Clonando prod (branch main)..."
-              git clone --branch main --depth 1 "$REPO_SSH" "$PROD_DIR"
-            fi
-
-            # hmg — atualiza mesmo em deploys de prod para manter ambiente sincronizado
-            if [ -d "$HMG_DIR/.git" ]; then
-              git -C "$HMG_DIR" remote set-url origin "$REPO_SSH" 2>/dev/null || true
-              git -C "$HMG_DIR" fetch origin hmg --quiet
-              git -C "$HMG_DIR" reset --hard origin/hmg --quiet
-            else
-              echo "Clonando hmg (branch hmg)..."
-              git clone --branch hmg --depth 1 "$REPO_SSH" "$HMG_DIR"
-            fi
-
-            # Reconfigurar Nginx e .env apenas se sudo sem senha estiver disponivel
-            if sudo -n true 2>/dev/null; then
-              echo "Reconfigurando Nginx e .env (setup-deploy.sh)..."
-              sudo -E bash "$PROD_DIR/.vps/setup-deploy.sh" \
-                --non-interactive \
-                --skip-ssl-hmg \
-                --skip-dns-check
-            else
-              echo "INFO: sudo requer senha — Nginx/.env nao reconfigurado agora"
-              echo "      Use o workflow 'Setup VPS (first-time)' para reconfigurar"
-            fi
-
-            # Atualizar codigo do repositorio
+            # ── Atualizar repositorio do ambiente correto ─────────────────────
+            # prod deploys → /opt/arch-analyzer/prod (branch main)
+            # hmg  deploys → /opt/arch-analyzer/hmg  (branch hmg)
             mkdir -p "$DEPLOY_DIR"
             if [ -d "$DEPLOY_DIR/.git" ]; then
               git -C "$DEPLOY_DIR" remote set-url origin "$REPO_SSH"
@@ -254,6 +210,40 @@ jobs:
               git -C "$DEPLOY_DIR" reset --hard "origin/$BRANCH"
             else
               git clone --branch "$BRANCH" "$REPO_SSH" "$DEPLOY_DIR"
+            fi
+
+            # ── Criar/atualizar .env a partir do .env.example ────────────────
+            # Substitui valores com os GitHub Secrets via Python para lidar
+            # corretamente com senhas que contenham caracteres especiais.
+            ENV_FILE="$DEPLOY_DIR/infrastructure/.env"
+            EXAMPLE_FILE="$DEPLOY_DIR/infrastructure/.env.example"
+            if [ -f "$EXAMPLE_FILE" ]; then
+              cp "$EXAMPLE_FILE" "$ENV_FILE"
+              python3 -c "
+import re, os
+p = '${ENV_FILE}'
+c = open(p).read()
+for k in ['POSTGRES_USER','POSTGRES_PASSWORD','POSTGRES_DB',
+          'RABBITMQ_USER','RABBITMQ_PASSWORD',
+          'OPENAI_API_KEY','JWT_SECRET_KEY',
+          'ADMIN_USER','ADMIN_PASSWORD',
+          'MINIO_ACCESS_KEY','MINIO_SECRET_KEY','MINIO_BUCKET',
+          'GRAFANA_USER','GRAFANA_PASSWORD',
+          'ALLOWED_ORIGINS','IMAGE_TAG','TZ']:
+    v = os.environ.get(k, '')
+    if v:
+        c = re.sub('^' + k + '=.*', k + '=' + v, c, flags=re.MULTILINE)
+u  = os.environ.get('POSTGRES_USER', 'fiap')
+pw = os.environ.get('POSTGRES_PASSWORD', '')
+db = os.environ.get('POSTGRES_DB', 'fiap')
+c = re.sub('^DATABASE_URL=.*',
+           'DATABASE_URL=postgresql+asyncpg://' + u + ':' + pw + '@postgres:5432/' + db,
+           c, flags=re.MULTILINE)
+open(p, 'w').write(c)
+"
+              echo ".env gerado: $ENV_FILE"
+            else
+              echo "AVISO: $EXAMPLE_FILE nao encontrado — .env nao gerado"
             fi
 
             MANIFESTS_DIR="$DEPLOY_DIR/infrastructure/k8s"
