@@ -304,7 +304,6 @@ PYEOF
 
 setup_deploy_sudoers() {
     hdr "Configurando sudoers para deploy automatico"
-    DEPLOY_USER="${SUDO_USER:-ubuntu}"
 
     # Script wrapper: permite que o usuario de deploy recarregue o Nginx
     # sem senha, recebendo a nova config via stdin.
@@ -328,10 +327,12 @@ fi
 WRAPPER
     chmod +x /usr/local/bin/arch-nginx-apply
 
+    # Usa %sudo (grupo) em vez de usuario especifico — funciona para qualquer
+    # usuario com privilegios sudo, incluindo o usuario SSH do GitHub Actions.
     SUDOERS_FILE="/etc/sudoers.d/arch-deploy-nginx"
-    echo "${DEPLOY_USER} ALL=(root) NOPASSWD: /usr/local/bin/arch-nginx-apply" > "$SUDOERS_FILE"
+    echo "%sudo ALL=(root) NOPASSWD: /usr/local/bin/arch-nginx-apply" > "$SUDOERS_FILE"
     chmod 0440 "$SUDOERS_FILE"
-    ok "sudoers configurado para usuario '${DEPLOY_USER}' (nginx reload sem senha)"
+    ok "sudoers configurado para grupo sudo (nginx reload sem senha)"
 }
 
 configure_nginx() {
