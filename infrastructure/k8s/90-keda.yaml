@@ -1,0 +1,29 @@
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: rabbitmq-trigger-auth
+spec:
+  secretTargetRef:
+    - parameter: host
+      name: rabbitmq-keda-auth
+      key: host
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: ai-service-scaler
+spec:
+  scaleTargetRef:
+    name: ai-service
+  minReplicaCount: 1
+  maxReplicaCount: ${MAX_REPLICAS}
+  cooldownPeriod: 60
+  triggers:
+    - type: rabbitmq
+      metadata:
+        protocol: amqp
+        queueName: diagram.upload
+        mode: QueueLength
+        value: "${QUEUE_MESSAGES_PER_REPLICA}"
+      authenticationRef:
+        name: rabbitmq-trigger-auth

@@ -24,17 +24,25 @@ class RabbitMQPublisher(MessagePublisherPort):
     ) -> None:
         """Publish upload event to RabbitMQ."""
         channel = await self._connection.channel()
-        
+
+        # Garante que a fila existe antes de publicar (durable=True para
+        # sobreviver a restart do RabbitMQ e evitar perda de mensagens
+        # caso o ai-service ainda não tenha declarado a fila).
+        await channel.declare_queue("diagram.upload", durable=True)
+
         message_body = json.dumps({
             "upload_id": upload_id,
             "filename": filename,
             "file_path": file_path,
             "content_type": content_type,
         })
-        
+
         await channel.default_exchange.publish(
-            aio_pika.Message(body=message_body.encode()),
-            routing_key="diagram.upload"
+            aio_pika.Message(
+                body=message_body.encode(),
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+            ),
+            routing_key="diagram.upload",
         )
 
 

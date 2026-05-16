@@ -1,26 +1,434 @@
-# Triggers only — test logic lives in reusable-report-service-tests.yml
 name: Deploy Application
 
 on:
   push:
-    branches: [main]
+    branches: [main, hmg]
   workflow_dispatch:
 
 permissions:
   contents: read
+  packages: write
+
+env:
+  IMAGE_PREFIX: ghcr.io/bwasistemas/hackathon
 
 jobs:
+  # ── Testes (todos obrigatórios antes do deploy) ───────────────────────────────
+
   test-report-service:
     uses: ./.github/workflows/reusable-report-service-tests.yml
+
   test-ai-service:
     uses: ./.github/workflows/reusable-ai-service-tests.yml
+
   test-upload-service:
     uses: ./.github/workflows/reusable-upload-service-tests.yml
-  deploy-app:
+
+  # ── Build & Push de imagens para o GHCR ──────────────────────────────────────
+
+  build-push:
+    name: Build & Push Images
     needs: [test-report-service, test-ai-service, test-upload-service]
     runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.value }}
     steps:
-      - name: Deploy placeholder
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tag
+        id: tag
+        run: echo "value=${{ github.ref_name }}-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/frontend:${{ steps.tag.outputs.value }}
+            ${{ env.IMAGE_PREFIX }}/frontend:${{ github.ref_name }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Build & push upload-service
+        uses: docker/build-push-action@v5
+        with:
+          context: services/upload-service
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/upload-service:${{ steps.tag.outputs.value }}
+            ${{ env.IMAGE_PREFIX }}/upload-service:${{ github.ref_name }}
+          cache-from: type=gha,scope=upload-service
+          cache-to: type=gha,mode=max,scope=upload-service
+
+      - name: Build & push ai-service
+        uses: docker/build-push-action@v5
+        with:
+          context: services/ai-service
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/ai-service:${{ steps.tag.outputs.value }}
+            ${{ env.IMAGE_PREFIX }}/ai-service:${{ github.ref_name }}
+          cache-from: type=gha,scope=ai-service
+          cache-to: type=gha,mode=max,scope=ai-service
+
+      - name: Build & push report-service
+        uses: docker/build-push-action@v5
+        with:
+          context: services/report-service
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/report-service:${{ steps.tag.outputs.value }}
+            ${{ env.IMAGE_PREFIX }}/report-service:${{ github.ref_name }}
+          cache-from: type=gha,scope=report-service
+          cache-to: type=gha,mode=max,scope=report-service
+
+      - name: Build & push rabbitmq
+        uses: docker/build-push-action@v5
+        with:
+          context: infrastructure/rabbitmq
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/rabbitmq:${{ steps.tag.outputs.value }}
+            ${{ env.IMAGE_PREFIX }}/rabbitmq:${{ github.ref_name }}
+          cache-from: type=gha,scope=rabbitmq
+          cache-to: type=gha,mode=max,scope=rabbitmq
+
+  # ── Deploy na VPS via SSH (kubectl → Kind) ───────────────────────────────────
+
+  deploy:
+    name: Deploy (${{ github.ref_name == 'main' && 'producao' || 'homologacao' }})
+    needs: build-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set deployment vars
+        id: vars
         run: |
-          echo "Deploying application..."
-          echo "TODO: Implement deployment logic"
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "namespace=arch-prod"                                                                     >> "$GITHUB_OUTPUT"
+            echo "domain=${{ vars.DOMAIN_PROD || 'archanalyzer.brunoretiro.com.br' }}"                   >> "$GITHUB_OUTPUT"
+            echo "frontend_nodeport=30080"                                                                >> "$GITHUB_OUTPUT"
+            echo "grafana_nodeport=30082"                                                                 >> "$GITHUB_OUTPUT"
+            echo "prometheus_nodeport=30084"                                                              >> "$GITHUB_OUTPUT"
+            echo "rabbitmq_mgmt_nodeport=30086"                                                           >> "$GITHUB_OUTPUT"
+            echo "allowed_origins=https://${{ vars.DOMAIN_PROD || 'archanalyzer.brunoretiro.com.br' }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "namespace=arch-hmg"                                                                     >> "$GITHUB_OUTPUT"
+            echo "domain=${{ vars.DOMAIN_HMG || 'archanalyzerhmg.brunoretiro.com.br' }}"                >> "$GITHUB_OUTPUT"
+            echo "frontend_nodeport=30081"                                                                >> "$GITHUB_OUTPUT"
+            echo "grafana_nodeport=30083"                                                                 >> "$GITHUB_OUTPUT"
+            echo "prometheus_nodeport=30085"                                                              >> "$GITHUB_OUTPUT"
+            echo "rabbitmq_mgmt_nodeport=30087"                                                           >> "$GITHUB_OUTPUT"
+            echo "allowed_origins=https://${{ vars.DOMAIN_HMG || 'archanalyzerhmg.brunoretiro.com.br' }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copiar manifests para VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          source: "infrastructure/k8s"
+          target: "/tmp/arch-k8s-${{ steps.vars.outputs.namespace }}"
+          rm: true
+
+      - name: Copiar config Nginx para VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          source: ".vps/nginx-archanalyzer.conf"
+          target: "/tmp/arch-nginx-update"
+          rm: true
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GITHUB_TOKEN:               ${{ secrets.GITHUB_TOKEN }}
+          GHCR_PAT:                   ${{ secrets.GHCR_PAT }}
+          GITHUB_ACTOR:               ${{ github.actor }}
+          IMAGE_PREFIX:               ghcr.io/bwasistemas/hackathon
+          IMAGE_TAG:                  ${{ needs.build-push.outputs.image_tag }}
+          NAMESPACE:                  ${{ steps.vars.outputs.namespace }}
+          DOMAIN:                     ${{ steps.vars.outputs.domain }}
+          FRONTEND_NODEPORT:          ${{ steps.vars.outputs.frontend_nodeport }}
+          GRAFANA_NODEPORT:           ${{ steps.vars.outputs.grafana_nodeport }}
+          PROMETHEUS_NODEPORT:        ${{ steps.vars.outputs.prometheus_nodeport }}
+          RABBITMQ_MGMT_NODEPORT:     ${{ steps.vars.outputs.rabbitmq_mgmt_nodeport }}
+          ALLOWED_ORIGINS:            ${{ steps.vars.outputs.allowed_origins }}
+          POSTGRES_DB:                ${{ vars.POSTGRES_DB || 'fiap' }}
+          MINIO_BUCKET:               ${{ vars.MINIO_BUCKET || 'fiap' }}
+          TZ:                         ${{ vars.TZ || 'America/Sao_Paulo' }}
+          MAX_REPLICAS:               ${{ vars.MAX_REPLICAS || '5' }}
+          QUEUE_MESSAGES_PER_REPLICA: ${{ vars.QUEUE_MESSAGES_PER_REPLICA || '5' }}
+          POSTGRES_USER:              ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD:          ${{ secrets.POSTGRES_PASSWORD }}
+          RABBITMQ_USER:              ${{ secrets.RABBITMQ_USER }}
+          RABBITMQ_PASSWORD:          ${{ secrets.RABBITMQ_PASSWORD }}
+          OPENAI_API_KEY:             ${{ secrets.OPENAI_API_KEY }}
+          JWT_SECRET_KEY:             ${{ secrets.JWT_SECRET_KEY }}
+          ADMIN_USER:                 ${{ secrets.ADMIN_USER }}
+          ADMIN_PASSWORD:             ${{ secrets.ADMIN_PASSWORD }}
+          MINIO_ACCESS_KEY:           ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY:           ${{ secrets.MINIO_SECRET_KEY }}
+          GRAFANA_USER:               ${{ secrets.GRAFANA_USER }}
+          GRAFANA_PASSWORD:           ${{ secrets.GRAFANA_PASSWORD }}
+          DOMAIN_PROD:                ${{ vars.DOMAIN_PROD || 'archanalyzer.brunoretiro.com.br' }}
+          DOMAIN_HMG:                 ${{ vars.DOMAIN_HMG || 'archanalyzerhmg.brunoretiro.com.br' }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          envs: GITHUB_TOKEN,GHCR_PAT,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,NAMESPACE,DOMAIN,DOMAIN_PROD,DOMAIN_HMG,FRONTEND_NODEPORT,GRAFANA_NODEPORT,PROMETHEUS_NODEPORT,RABBITMQ_MGMT_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
+          script: |
+            set -e
+
+            # Validar credenciais obrigatorias
+            MISSING=""
+            [ -z "$POSTGRES_USER" ]     && MISSING="$MISSING POSTGRES_USER"
+            [ -z "$POSTGRES_PASSWORD" ] && MISSING="$MISSING POSTGRES_PASSWORD"
+            [ -z "$RABBITMQ_USER" ]     && MISSING="$MISSING RABBITMQ_USER"
+            [ -z "$RABBITMQ_PASSWORD" ] && MISSING="$MISSING RABBITMQ_PASSWORD"
+            [ -z "$JWT_SECRET_KEY" ]    && MISSING="$MISSING JWT_SECRET_KEY"
+            [ -z "$MINIO_ACCESS_KEY" ]  && MISSING="$MISSING MINIO_ACCESS_KEY"
+            [ -z "$MINIO_SECRET_KEY" ]  && MISSING="$MISSING MINIO_SECRET_KEY"
+            [ -z "$OPENAI_API_KEY" ]    && MISSING="$MISSING OPENAI_API_KEY"
+            [ -z "$ADMIN_USER" ]        && MISSING="$MISSING ADMIN_USER"
+            [ -z "$ADMIN_PASSWORD" ]    && MISSING="$MISSING ADMIN_PASSWORD"
+            [ -z "$GRAFANA_USER" ]      && MISSING="$MISSING GRAFANA_USER"
+            [ -z "$GRAFANA_PASSWORD" ]  && MISSING="$MISSING GRAFANA_PASSWORD"
+            if [ -n "$MISSING" ]; then
+              echo "ERRO: Secrets obrigatorios nao configurados no repositorio:$MISSING"
+              echo "Configure esses valores em Settings > Secrets and variables > Actions"
+              exit 1
+            fi
+            # MinIO exige usuario >= 3 chars e senha >= 8 chars
+            if [ "${#MINIO_ACCESS_KEY}" -lt 3 ]; then
+              echo "ERRO: MINIO_ACCESS_KEY deve ter pelo menos 3 caracteres"
+              exit 1
+            fi
+            if [ "${#MINIO_SECRET_KEY}" -lt 8 ]; then
+              echo "ERRO: MINIO_SECRET_KEY deve ter pelo menos 8 caracteres"
+              exit 1
+            fi
+
+            MANIFESTS_DIR="/tmp/arch-k8s-${NAMESPACE}/k8s"
+
+            # Garantir que envsubst está disponível
+            command -v envsubst &>/dev/null || apt-get install -y gettext-base
+
+            # ── Kubeconfig do Kind ────────────────────────────────────────────
+            if ! kubectl cluster-info &>/dev/null 2>&1; then
+              CLUSTER_NAME=$(kind get clusters 2>/dev/null | head -1)
+              if [ -n "$CLUSTER_NAME" ]; then
+                echo "Exportando kubeconfig do cluster Kind: $CLUSTER_NAME"
+                kind export kubeconfig --name "$CLUSTER_NAME"
+              else
+                echo "ERRO: Cluster Kind nao encontrado."
+                echo "Execute o workflow 'Setup VPS (first-time)' antes do primeiro deploy."
+                exit 1
+              fi
+            fi
+
+            # ── Atualizar Nginx se o template mudou ───────────────────────────
+            NGINX_TEMPLATE="/tmp/arch-nginx-update/.vps/nginx-archanalyzer.conf"
+            NGINX_INSTALLED="/etc/nginx/sites-available/arch-analyzer"
+            if [ -f "$NGINX_TEMPLATE" ]; then
+              NGINX_RENDERED=$(sed \
+                -e "s|__DOMAIN_PROD__|${DOMAIN_PROD}|g" \
+                -e "s|__DOMAIN_HMG__|${DOMAIN_HMG}|g" \
+                "$NGINX_TEMPLATE")
+              CURRENT_MD5=$(md5sum "$NGINX_INSTALLED" 2>/dev/null | cut -d' ' -f1 || echo "none")
+              NEW_MD5=$(echo "$NGINX_RENDERED" | md5sum | cut -d' ' -f1)
+              if [ "$CURRENT_MD5" != "$NEW_MD5" ]; then
+                echo "Atualizando config Nginx..."
+                echo "$NGINX_RENDERED" | sudo /usr/local/bin/arch-nginx-apply \
+                  || echo "AVISO: falha ao atualizar Nginx — verifique a config manualmente."
+              else
+                echo "Config Nginx sem alteracoes."
+              fi
+              rm -rf /tmp/arch-nginx-update
+            fi
+
+            # ── NodePort no host (socat para Kind sem extraPortMappings) ──────
+            setup_socat_port() {
+              local PORT="$1"
+              if ! ss -tlnp 2>/dev/null | grep -q ":${PORT} "; then
+                local CTRL_IP
+                CTRL_IP=$(docker inspect kind-control-plane \
+                  --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
+                  2>/dev/null | head -1 || echo "")
+                if [ -n "$CTRL_IP" ]; then
+                  pkill -f "socat.*:${PORT}" 2>/dev/null || true
+                  local SOCAT_SCRIPT="$HOME/.socat-${PORT}.sh"
+                  printf '#!/bin/bash\n' > "$SOCAT_SCRIPT"
+                  printf 'IP=$(docker inspect kind-control-plane --format '"'"'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'"'"' 2>/dev/null | head -1)\n' >> "$SOCAT_SCRIPT"
+                  printf '[ -z "$IP" ] && exit 1\n' >> "$SOCAT_SCRIPT"
+                  printf 'pkill -f "socat.*:%s" 2>/dev/null || true\n' "${PORT}" >> "$SOCAT_SCRIPT"
+                  printf 'nohup socat TCP-LISTEN:%s,bind=127.0.0.1,fork,reuseaddr TCP:${IP}:%s >/tmp/socat-%s.log 2>&1 &\n' "${PORT}" "${PORT}" "${PORT}" >> "$SOCAT_SCRIPT"
+                  chmod +x "$SOCAT_SCRIPT"
+                  (crontab -l 2>/dev/null | grep -v "socat-${PORT}"; echo "@reboot $SOCAT_SCRIPT") | crontab -
+                  "$SOCAT_SCRIPT"
+                  sleep 1
+                  echo "socat: localhost:${PORT} -> kind-control-plane (${CTRL_IP}):${PORT}"
+                else
+                  echo "AVISO: kind-control-plane nao encontrado -- porta ${PORT} pode nao ser acessivel"
+                fi
+              fi
+            }
+            setup_socat_port "$FRONTEND_NODEPORT"
+            setup_socat_port "$GRAFANA_NODEPORT"
+            setup_socat_port "$PROMETHEUS_NODEPORT"
+            setup_socat_port "$RABBITMQ_MGMT_NODEPORT"
+
+            # ── KEDA (instala se CRDs ausentes) ──────────────────────────────
+            if ! kubectl get crd scaledobjects.keda.sh &>/dev/null 2>&1; then
+              echo "KEDA nao encontrado — instalando v2.14.0..."
+              kubectl apply --server-side -f https://github.com/kedacore/keda/releases/download/v2.14.0/keda-2.14.0.yaml
+              echo "Aguardando operador KEDA..."
+              kubectl rollout status deployment/keda-operator -n keda --timeout=120s
+            fi
+
+            # ── Namespace ─────────────────────────────────────────────────────
+            kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply --validate=false -f -
+
+            # ── GHCR pull secret ──────────────────────────────────────────────
+            # GITHUB_TOKEN expira ao fim do workflow — KEDA ao escalar pods
+            # depois do deploy receberia 403. GHCR_PAT (PAT com read:packages)
+            # e permanente e deve ser configurado nos Secrets do repositorio.
+            PULL_TOKEN="${GHCR_PAT:-$GITHUB_TOKEN}"
+            echo "$PULL_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+            kubectl create secret docker-registry ghcr-pull-secret \
+              --docker-server=ghcr.io \
+              --docker-username="$GITHUB_ACTOR" \
+              --docker-password="$PULL_TOKEN" \
+              --namespace="$NAMESPACE" \
+              --dry-run=client -o yaml | kubectl apply --validate=false -f -
+
+            # ── Secrets da aplicacao ──────────────────────────────────────────
+            kubectl create secret generic arch-secrets \
+              --namespace="$NAMESPACE" \
+              --from-literal=POSTGRES_USER="$POSTGRES_USER" \
+              --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+              --from-literal=RABBITMQ_USER="$RABBITMQ_USER" \
+              --from-literal=RABBITMQ_PASSWORD="$RABBITMQ_PASSWORD" \
+              --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY" \
+              --from-literal=JWT_SECRET_KEY="$JWT_SECRET_KEY" \
+              --from-literal=ADMIN_USER="$ADMIN_USER" \
+              --from-literal=ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+              --from-literal=MINIO_ACCESS_KEY="$MINIO_ACCESS_KEY" \
+              --from-literal=MINIO_SECRET_KEY="$MINIO_SECRET_KEY" \
+              --from-literal=GRAFANA_USER="$GRAFANA_USER" \
+              --from-literal=GRAFANA_PASSWORD="$GRAFANA_PASSWORD" \
+              --dry-run=client -o yaml | kubectl apply --validate=false -f -
+
+            # ── Secret KEDA ───────────────────────────────────────────────────
+            RABBITMQ_AMQP_URL="amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq.${NAMESPACE}.svc.cluster.local:5672/"
+            kubectl create secret generic rabbitmq-keda-auth \
+              --namespace="$NAMESPACE" \
+              --from-literal=host="$RABBITMQ_AMQP_URL" \
+              --dry-run=client -o yaml | kubectl apply --validate=false -f -
+
+            # ── Aplicar manifests ─────────────────────────────────────────────
+            ENVSUBST_VARS='${IMAGE_PREFIX} ${IMAGE_TAG} ${NAMESPACE} ${DOMAIN} ${POSTGRES_DB} ${MINIO_BUCKET} ${TZ} ${ALLOWED_ORIGINS} ${FRONTEND_NODEPORT} ${GRAFANA_NODEPORT} ${PROMETHEUS_NODEPORT} ${RABBITMQ_MGMT_NODEPORT} ${MAX_REPLICAS} ${QUEUE_MESSAGES_PER_REPLICA}'
+            for manifest in $(ls "$MANIFESTS_DIR"/*.yaml | sort); do
+              echo "Aplicando: $(basename $manifest)..."
+              envsubst "$ENVSUBST_VARS" < "$manifest" | kubectl apply --validate=false -n "$NAMESPACE" -f -
+            done
+
+            rm -rf "/tmp/arch-k8s-${NAMESPACE}"
+
+            # ── Aguardar rollouts ─────────────────────────────────────────────
+            ROLLOUT_FAILED=false
+
+            # Servicos criticos — falha aqui para o deploy
+            for deploy in upload-service ai-service report-service frontend; do
+              echo "Aguardando rollout de $deploy..."
+              if ! kubectl rollout status deployment/"$deploy" -n "$NAMESPACE" --timeout=180s; then
+                echo "FALHA: rollout de $deploy nao concluiu — verifique os logs do pod."
+                ROLLOUT_FAILED=true
+              fi
+            done
+            for ss in postgres rabbitmq minio; do
+              echo "Aguardando StatefulSet $ss..."
+              if ! kubectl rollout status statefulset/"$ss" -n "$NAMESPACE" --timeout=180s; then
+                echo "FALHA: rollout de $ss nao concluiu."
+                ROLLOUT_FAILED=true
+              fi
+            done
+
+            # Observabilidade — nao critica; falha e reportada mas nao para o deploy
+            for deploy in prometheus grafana loki; do
+              echo "Aguardando rollout de $deploy (observabilidade)..."
+              kubectl rollout status deployment/"$deploy" -n "$NAMESPACE" --timeout=120s || \
+                echo "AVISO: rollout de $deploy nao concluiu — observabilidade pode estar degradada."
+            done
+            echo "Aguardando DaemonSet promtail (observabilidade)..."
+            kubectl rollout status daemonset/promtail -n "$NAMESPACE" --timeout=60s || \
+              echo "AVISO: promtail DaemonSet nao concluiu — coleta de logs pode estar degradada."
+
+            # ── Smoke test ────────────────────────────────────────────────────
+            echo "Smoke test na porta $FRONTEND_NODEPORT..."
+            HTTP_CODE="000"
+            for i in $(seq 1 10); do
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                --max-time 5 "http://localhost:${FRONTEND_NODEPORT}" 2>/dev/null)
+              [ -z "$HTTP_CODE" ] && HTTP_CODE="000"
+              if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "304" ]; then
+                echo "Frontend OK — HTTP $HTTP_CODE"
+                break
+              fi
+              echo "  Tentativa $i/10 — HTTP $HTTP_CODE — aguardando 6s..."
+              sleep 6
+            done
+
+            if [ "$HTTP_CODE" = "000" ]; then
+              echo "AVISO: Frontend nao respondeu no smoke test — verifique os logs:"
+              kubectl get pods -n "$NAMESPACE"
+              echo ""
+              echo "Se o erro for 502 no Nginx, o socat pode nao ter iniciado."
+              echo "Solucao permanente: recriar o cluster Kind via 'Setup VPS (first-time)'"
+              exit 1
+            fi
+
+            # ── Status final ──────────────────────────────────────────────────
+            echo ""
+            echo "=== Pods em execucao ==="
+            kubectl get pods -n "$NAMESPACE" -o wide
+
+            # Mostrar logs de pods em CrashLoopBackOff ou Error
+            for pod in $(kubectl get pods -n "$NAMESPACE" --no-headers \
+              | awk '$3 ~ /CrashLoopBackOff|Error|OOMKilled/ {print $1}'); do
+              echo ""
+              echo "--- Logs: $pod ---"
+              kubectl logs -n "$NAMESPACE" "$pod" --tail=30 2>/dev/null || true
+            done
+
+            echo ""
+            echo "=== Deploy concluido ==="
+            echo "Namespace: $NAMESPACE"
+            echo "Tag      : $IMAGE_TAG"
+
+            if [ "$ROLLOUT_FAILED" = "true" ]; then
+              echo ""
+              echo "ATENCAO: um ou mais servicos criticos nao completaram o rollout."
+              echo "Verifique os logs acima e o status dos pods antes de considerar o deploy estavel."
+              exit 1
+            fi

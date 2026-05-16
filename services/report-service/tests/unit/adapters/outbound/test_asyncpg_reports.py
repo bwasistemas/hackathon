@@ -346,17 +346,19 @@ async def test_create_repositories_returns_adapters_when_pool_succeeds(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_create_repositories_returns_nulls_when_pool_raises(monkeypatch, capsys):
+async def test_create_repositories_returns_nulls_when_pool_raises(monkeypatch, caplog):
     """On pool creation failure, null repositories and None pool should be returned."""
+    import logging
 
     async def boom(**kwargs):
         raise ConnectionError("refused")
 
     monkeypatch.setattr(asyncpg_reports.asyncpg, "create_pool", boom)
-    r, f, pool = await asyncpg_reports.create_repositories(
-        "postgresql+asyncpg://u:p@localhost:5432/db"
-    )
+    with caplog.at_level(logging.ERROR):
+        r, f, pool = await asyncpg_reports.create_repositories(
+            "postgresql+asyncpg://u:p@localhost:5432/db"
+        )
     assert pool is None
     assert isinstance(r, NullReportRepository)
     assert isinstance(f, NullFeedbackRepository)
-    assert "DB Error" in capsys.readouterr().out
+    assert "Failed to initialize report repositories" in caplog.text

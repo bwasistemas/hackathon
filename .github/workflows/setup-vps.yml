@@ -1,0 +1,117 @@
+name: Setup VPS - first-time
+
+# Acionado manualmente pelo GitHub UI ou CLI.
+# Faz o setup completo da VPS: clone dos repos, .env, Nginx e SSL para HMG.
+#
+# Pré-requisitos (Secrets do repositório):
+#   VPS_HOST           — IP ou hostname da VPS
+#   VPS_USER           — usuário SSH
+#   VPS_SSH_KEY        — chave privada SSH (sem passphrase)
+#   VPS_SSH_PORT       — porta SSH (opcional; padrão: 22)
+#   LETSENCRYPT_EMAIL  — email para certificados Let's Encrypt
+#
+# Para clone do repositorio privado usa GH_DEPLOY_KEY (deploy key SSH).
+# O REPO_SSH_URL deve estar configurado como variavel do repositorio.
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_ssl_hmg:
+        description: "Pular geração do cert SSL para HMG (DNS ainda não propagou)"
+        type: boolean
+        default: false
+      skip_dns_check:
+        description: "Pular verificação de propagação de DNS"
+        type: boolean
+        default: false
+      force_env:
+        description: "Recriar .env mesmo se já existirem"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Setup VPS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          REPO_SSH_URL:       ${{ vars.REPO_SSH_URL }}
+          GH_DEPLOY_KEY:      ${{ secrets.GH_DEPLOY_KEY }}
+          LETSENCRYPT_EMAIL:  ${{ secrets.LETSENCRYPT_EMAIL }}
+          SKIP_SSL_HMG:       ${{ inputs.skip_ssl_hmg }}
+          SKIP_DNS_CHECK:     ${{ inputs.skip_dns_check }}
+          FORCE_ENV:          ${{ inputs.force_env }}
+          DOMAIN_PROD:        ${{ vars.DOMAIN_PROD || 'archanalyzer.brunoretiro.com.br' }}
+          DOMAIN_HMG:         ${{ vars.DOMAIN_HMG  || 'archanalyzerhmg.brunoretiro.com.br' }}
+        with:
+          host:     ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key:      ${{ secrets.VPS_SSH_KEY }}
+          port:     ${{ secrets.VPS_SSH_PORT || '22' }}
+          envs:     REPO_SSH_URL,GH_DEPLOY_KEY,LETSENCRYPT_EMAIL,SKIP_SSL_HMG,SKIP_DNS_CHECK,FORCE_ENV,DOMAIN_PROD,DOMAIN_HMG
+          command_timeout: 30m
+          script: |
+            set -e
+
+            # Configurar chave SSH de deploy para o GitHub
+            mkdir -p ~/.ssh
+            echo "$GH_DEPLOY_KEY" > ~/.ssh/github_deploy
+            chmod 600 ~/.ssh/github_deploy
+            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+            export GIT_SSH_COMMAND="ssh -i ~/.ssh/github_deploy -o StrictHostKeyChecking=no"
+
+            BASE_DIR="/opt/arch-analyzer"
+            PROD_DIR="$BASE_DIR/prod"
+            HMG_DIR="$BASE_DIR/hmg"
+            SCRIPT_DIR="$PROD_DIR/.vps"
+            REPO_SSH="$REPO_SSH_URL"
+
+            # Garantir que o diretorio pai pertence ao usuario SSH
+            # (necessario para que o deploy possa criar /opt/arch-analyzer/hmg)
+            sudo mkdir -p "$BASE_DIR" "$PROD_DIR" "$HMG_DIR"
+            sudo chown -R "$(whoami):$(whoami)" "$BASE_DIR"
+
+            # ── Clonar/atualizar repo (prod = scripts de setup; hmg = ambiente HMG) ─
+            if [ ! -d "$PROD_DIR/.git" ]; then
+              echo "Clonando repositorio prod (main)..."
+              git clone --branch main --depth 1 "$REPO_SSH" "$PROD_DIR"
+            else
+              echo "Atualizando prod para main..."
+              git -C "$PROD_DIR" remote set-url origin "$REPO_SSH"
+              git -C "$PROD_DIR" fetch origin main --quiet
+              git -C "$PROD_DIR" reset --hard origin/main --quiet
+            fi
+
+            if [ ! -d "$HMG_DIR/.git" ]; then
+              echo "Clonando repositorio hmg..."
+              git clone --branch hmg --depth 1 "$REPO_SSH" "$HMG_DIR"
+            else
+              echo "Atualizando hmg..."
+              git -C "$HMG_DIR" remote set-url origin "$REPO_SSH"
+              git -C "$HMG_DIR" fetch origin hmg --quiet
+              git -C "$HMG_DIR" reset --hard origin/hmg --quiet
+            fi
+
+            sudo chmod +x "$SCRIPT_DIR"/*.sh
+
+            # ── 1. Setup de infraestrutura (Kind, KEDA, Nginx, SSL, Portainer) ─
+            # Roda apenas se o Kind ainda nao estiver instalado
+            if ! command -v kind &>/dev/null || ! kind get clusters 2>/dev/null | grep -q .; then
+              echo "Kind nao encontrado ou sem cluster — executando setup-vps.sh..."
+              sudo -E bash "$SCRIPT_DIR/setup-vps.sh" "$LETSENCRYPT_EMAIL"
+            else
+              echo "Kind ja instalado com cluster ativo — pulando setup-vps.sh"
+            fi
+
+            # ── 2. Setup de deploy (chown, Nginx, SSL HMG) ───────────────────
+            FLAGS=(--non-interactive)
+            [ "$SKIP_SSL_HMG"   = "true" ] && FLAGS+=(--skip-ssl-hmg)
+            [ "$SKIP_DNS_CHECK" = "true" ] && FLAGS+=(--skip-dns-check)
+            [ "$FORCE_ENV"      = "true" ] && FLAGS+=(--force-env)
+
+            sudo -E bash "$SCRIPT_DIR/setup-deploy.sh" "${FLAGS[@]}"

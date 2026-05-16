@@ -1,0 +1,23 @@
+# Override para deploy em produção/homologação — usar junto com docker-compose.yml:
+#
+#   docker compose -p arch-main \
+#     -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Substitui os build contexts por imagens pré-construídas do GHCR.
+# A variável IMAGE_TAG é atualizada automaticamente pelo pipeline de CD.
+
+services:
+  frontend:
+    image: ghcr.io/bwasistemas/hackathon/frontend:${IMAGE_TAG:-main}
+
+  upload-service:
+    image: ghcr.io/bwasistemas/hackathon/upload-service:${IMAGE_TAG:-main}
+
+  ai-service:
+    image: ghcr.io/bwasistemas/hackathon/ai-service:${IMAGE_TAG:-main}
+
+  report-service:
+    image: ghcr.io/bwasistemas/hackathon/report-service:${IMAGE_TAG:-main}
+
+  rabbitmq:
+    image: ghcr.io/bwasistemas/hackathon/rabbitmq:${IMAGE_TAG:-main}

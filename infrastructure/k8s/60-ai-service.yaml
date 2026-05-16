@@ -1,0 +1,102 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-service
+spec:
+  selector:
+    app: ai-service
+  ports:
+    - name: http
+      port: 8003
+      targetPort: 8003
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-service
+  template:
+    metadata:
+      labels:
+        app: ai-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8003"
+        prometheus.io/path: "/metrics"
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: ai-service
+          image: ${IMAGE_PREFIX}/ai-service:${IMAGE_TAG}
+          ports:
+            - containerPort: 8003
+          envFrom:
+            - configMapRef:
+                name: arch-config
+            - secretRef:
+                name: arch-secrets
+          env:
+            - name: SERVICE_NAME
+              value: "ai-service"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: arch-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: arch-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: arch-config
+                  key: POSTGRES_DB
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)"
+          volumeMounts:
+            - name: uploads-data
+              mountPath: /app/uploads
+            - name: localtime
+              mountPath: /etc/localtime
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8003
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8003
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+      volumes:
+        # emptyDir: compartilhamento de arquivos dentro do mesmo pod não é necessário aqui
+        # pois upload-service e ai-service são pods separados. Arquivos transitam via MinIO.
+        # Limitação: dados perdidos no restart do pod.
+        - name: uploads-data
+          emptyDir: {}
+        - name: localtime
+          hostPath:
+            path: /etc/localtime
+            type: FileOrCreate
