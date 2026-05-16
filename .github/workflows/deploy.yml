@@ -199,6 +199,21 @@ jobs:
             export GIT_SSH_COMMAND="ssh -i ~/.ssh/github_deploy -o StrictHostKeyChecking=no"
 
             REPO_SSH="$REPO_SSH_URL"
+            PROD_DIR="/opt/arch-analyzer/prod"
+
+            # ── Garantir configuracao completa do ambiente (idempotente) ─────
+            # Clona prod (scripts de setup) se ainda nao existir
+            if [ ! -d "$PROD_DIR/.git" ]; then
+              echo "Clonando repositorio prod para scripts de setup..."
+              sudo mkdir -p "/opt/arch-analyzer"
+              sudo chown -R "$(whoami):$(whoami)" "/opt/arch-analyzer"
+              git clone --branch main --depth 1 "$REPO_SSH" "$PROD_DIR"
+            fi
+            echo "Garantindo configuracao do ambiente (setup-deploy.sh)..."
+            sudo -E bash "$PROD_DIR/.vps/setup-deploy.sh" \
+              --non-interactive \
+              --skip-ssl-hmg \
+              --skip-dns-check
 
             # Atualizar codigo do repositorio
             mkdir -p "$DEPLOY_DIR"

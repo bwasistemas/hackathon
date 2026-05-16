@@ -55,8 +55,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ -z "$EMAIL" ]; then
-    err "Email não definido. Use --email ou defina a variável LETSENCRYPT_EMAIL."
+if [ -z "$EMAIL" ] && [ "$SKIP_SSL_HMG" = false ]; then
+    err "Email nao definido. Use --email ou defina a variavel LETSENCRYPT_EMAIL."
 fi
 
 ################################################################################
