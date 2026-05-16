@@ -27,7 +27,7 @@ on:
       force_env:
         description: "Recriar .env mesmo se já existirem"
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
