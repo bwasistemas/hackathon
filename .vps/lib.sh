@@ -106,6 +106,6 @@ REPO_URL="https://github.com/bwasistemas/hackathon.git"
 DOMAIN_PROD="${DOMAIN_PROD:-archanalyzer.brunoretiro.com.br}"
 DOMAIN_HMG="${DOMAIN_HMG:-archanalyzerhmg.brunoretiro.com.br}"
 
-NGINX_CONF_DEST="/etc/nginx/sites-available/default"
+NGINX_CONF_DEST="/etc/nginx/sites-available/arch-analyzer"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NGINX_CONF_SRC="$SCRIPT_DIR/nginx-archanalyzer.conf"

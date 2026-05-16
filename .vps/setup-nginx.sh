@@ -85,6 +85,13 @@ with open(dst, 'w') as f:
 PYEOF
 
 ################################################################################
+# Ativar arch-analyzer, desativar default (evita conflito de default_server)
+################################################################################
+
+ln -sf "$NGINX_CONF_DEST" /etc/nginx/sites-enabled/arch-analyzer 2>/dev/null || true
+rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+
+################################################################################
 # Validar e recarregar
 ################################################################################
 
