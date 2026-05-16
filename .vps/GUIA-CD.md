@@ -5,28 +5,56 @@
 ```
 GitHub Actions (CI/CD)
 │
-├─ push main ──→ testes ──→ build imagens ──→ push GHCR ──→ SSH ──→ VPS prod
-└─ push hmg  ──→ testes ──→ build imagens ──→ push GHCR ──→ SSH ──→ VPS hmg
-                                                                        │
-VPS                                                                      │
-├─ Nginx (80/443) ← SSL Let's Encrypt                                   │
-│   ├─ archanalyzer.brunoretiro.com.br/           → Kind NodePort 30080 (arch-prod)
-│   ├─ archanalyzerhmg.brunoretiro.com.br/        → Kind NodePort 30081 (arch-hmg)
-│   ├─ archanalyzer.brunoretiro.com.br/portainer/ → Portainer :9000
-│   └─ archanalyzer.brunoretiro.com.br/k8s/       → Headlamp  :30444
+├─ push main ──→ testes ──→ build imagens ──→ push GHCR ──→ SCP + SSH ──→ VPS prod
+└─ push hmg  ──→ testes ──→ build imagens ──→ push GHCR ──→ SCP + SSH ──→ VPS hmg
+                                                                   │
+VPS                                                                 │
+├─ Nginx (80/443) ← SSL Let's Encrypt                              │
+│   ├─ archanalyzer.brunoretiro.com.br/             → Kind NodePort 30080 (frontend prod)
+│   ├─ archanalyzer.brunoretiro.com.br/grafana/     → Kind NodePort 30082 (grafana prod)
+│   ├─ archanalyzer.brunoretiro.com.br/prometheus/  → Kind NodePort 30084 (prometheus prod)
+│   ├─ archanalyzer.brunoretiro.com.br/rabbitmq/    → Kind NodePort 30086 (rabbitmq-mgmt prod)
+│   ├─ archanalyzer.brunoretiro.com.br/portainer/  → Portainer Docker :9000
+│   ├─ archanalyzer.brunoretiro.com.br/k8s/        → Headlamp :30444
+│   │
+│   ├─ archanalyzerhmg.brunoretiro.com.br/          → Kind NodePort 30081 (frontend hmg)
+│   ├─ archanalyzerhmg.brunoretiro.com.br/grafana/  → Kind NodePort 30083 (grafana hmg)
+│   ├─ archanalyzerhmg.brunoretiro.com.br/prometheus/→ Kind NodePort 30085 (prometheus hmg)
+│   └─ archanalyzerhmg.brunoretiro.com.br/rabbitmq/ → Kind NodePort 30087 (rabbitmq-mgmt hmg)
 │
-├─ Kind cluster (2 workers)
+├─ Kind cluster (Kubernetes in Docker)
 │   ├─ Namespace arch-prod (producao — branch main)
-│   │   frontend:30080, upload:8001, ai:8003, report:8004
-│   │   postgres:5432, rabbitmq:5672, minio:9000, prometheus:9090, grafana:3000
+│   │   frontend:30080 · grafana:30082 · prometheus:30084 · rabbitmq-mgmt:30086
+│   │   upload:8001 · ai:8003 · report:8004
+│   │   postgres:5432 · rabbitmq:5672 · minio:9000 · loki:3100
 │   │
 │   └─ Namespace arch-hmg (homologacao — branch hmg)
-│       frontend:30081 (host), mesmos servicos internos
+│       frontend:30081 · grafana:30083 · prometheus:30085 · rabbitmq-mgmt:30087
+│       mesmos servicos internos, totalmente isolados do prod
 │
 ├─ KEDA v2.14 — autoscaling do ai-service
-│   ScaledObject: min=1, max=MAX_REPLICAS, trigger=queue diagram.upload
+│   ScaledObject: min=1, max=MAX_REPLICAS, trigger=fila diagram.upload
 │
-└─ Portainer + Headlamp — UIs de gerenciamento
+└─ Portainer + Headlamp — UIs de gerenciamento (compartilhadas entre prod e hmg)
+```
+
+---
+
+## Como o deploy funciona (a cada push)
+
+O pipeline **nao clona o repositorio na VPS**. O runner do GitHub Actions ja tem o
+codigo via `actions/checkout` e o transfere para a VPS apenas os manifests necessarios:
+
+```
+Runner (GitHub Actions)
+  1. checkout            → obtem infrastructure/k8s/
+  2. scp-action          → copia k8s/ para /tmp/arch-k8s-<namespace>/ na VPS
+  3. ssh-action          → na VPS:
+       - cria secrets Kubernetes (arch-secrets, ghcr-pull-secret, etc.)
+       - envsubst nas variaveis dos manifests
+       - kubectl apply -n <namespace>
+       - aguarda rollouts + smoke test
+       - rm -rf /tmp/arch-k8s-<namespace>/
 ```
 
 ---
@@ -56,21 +84,24 @@ docker compose up
 ```
 
 Os manifests em `infrastructure/k8s/` sao usados **apenas** pelo pipeline de deploy.
+O `.env` em `infrastructure/` serve apenas para o Docker Compose local.
 
 ---
 
 ## Estrutura dos Scripts `.vps/`
 
-| Script | Responsabilidade |
-|---|---|
-| `setup-vps.sh` | Orquestrador — instala Docker, Kind, kubectl, KEDA, Nginx, SSL, Portainer, Headlamp |
-| `setup-deploy.sh` | Orquestrador de CD — clona repo, configura Nginx, gera SSL HMG |
-| `setup-dirs.sh` | Clona/atualiza repositorio nos diretorios de deploy e ajusta permissoes |
-| `setup-env.sh` | Cria arquivos `.env` para prod e hmg |
-| `setup-nginx.sh` | Configura Nginx e recarrega |
-| `setup-ssl-hmg.sh` | Gera certificado SSL para `archanalyzerhmg.brunoretiro.com.br` |
-| `lib.sh` | Funcoes compartilhadas (logging, cores, utilitarios) |
-| `nginx-archanalyzer.conf` | Template Nginx (placeholders substituidos pelo setup-nginx.sh) |
+| Arquivo | Responsabilidade | Quando e chamado |
+|---|---|---|
+| `setup-vps.sh` | Instala Docker, Kind, kubectl, KEDA, Nginx, SSL prod, Portainer, Headlamp | `setup-vps.yml` (se Kind ausente) |
+| `setup-deploy.sh` | Orquestrador: chama os 4 scripts abaixo em sequencia | `setup-vps.yml` (sempre) |
+| `setup-dirs.sh` | Clona/atualiza repositorio em `/opt/arch-analyzer/prod` e `/hmg` | `setup-deploy.sh` |
+| `setup-env.sh` | Cria `.env` para docker-compose local (nao afeta o deploy K8s) | `setup-deploy.sh` |
+| `setup-nginx.sh` | Aplica `nginx-archanalyzer.conf` com os dominios reais e recarrega Nginx | `setup-deploy.sh` |
+| `setup-ssl-hmg.sh` | Gera cert SSL para `archanalyzerhmg.*` via certbot | `setup-deploy.sh` |
+| `lib.sh` | Funcoes compartilhadas (logging colorido, `require_root`) | `source` pelos outros scripts |
+| `nginx-archanalyzer.conf` | Template Nginx com placeholders `__DOMAIN_PROD__` e `__DOMAIN_HMG__` | Processado pelo `setup-nginx.sh` |
+| `fix-vps.sh` | Recria socat para porta 30444 (Headlamp) em clusters sem mapeamento | Execucao manual |
+| `uninstall-vps.sh` | Remove tudo que o setup-vps.sh instalou | Execucao manual |
 
 ---
 
@@ -80,46 +111,7 @@ Acesse: `github.com/bwasistemas/hackathon → Settings → Secrets and variables
 
 ---
 
-### 1. Deploy Key SSH para clone na VPS
-
-O pipeline usa SSH para clonar o repositorio na VPS (`git@github.com:bwasistemas/hackathon.git`).
-Tokens HTTPS (GITHUB_TOKEN, PAT) nao funcionam confiavelmente de maquinas externas.
-A solucao correta e uma chave SSH de deploy.
-
-**Como configurar (uma vez na VPS):**
-
-```bash
-# 1. Gerar chave dedicada para o GitHub (na VPS, como o usuario de deploy)
-ssh-keygen -t ed25519 -f ~/.ssh/github_deploy -N ""
-
-# 2. Exibir a chave publica — copiar o conteudo
-cat ~/.ssh/github_deploy.pub
-
-# 3. Configurar SSH para usar essa chave ao acessar github.com
-cat >> ~/.ssh/config << 'EOF'
-Host github.com
-  IdentityFile ~/.ssh/github_deploy
-  StrictHostKeyChecking no
-EOF
-chmod 600 ~/.ssh/config
-
-# 4. Testar a autenticacao
-ssh -T git@github.com
-# Esperado: "Hi bwasistemas/hackathon! You've successfully authenticated..."
-```
-
-**Adicionar a chave publica como Deploy Key no GitHub:**
-
-`github.com/bwasistemas/hackathon → Settings → Deploy keys → Add deploy key`
-- Title: `VPS Deploy Key`
-- Key: colar o conteudo de `~/.ssh/github_deploy.pub`
-- Allow write access: **nao** (leitura e suficiente para clone)
-
-Apos isso, os workflows clonam via SSH automaticamente — sem PAT ou GITHUB_TOKEN.
-
----
-
-### 2. VPS_SSH_KEY — Chave SSH para o CI acessar a VPS
+### 1. VPS_SSH_KEY — Chave SSH para o CI acessar a VPS
 
 O pipeline conecta na VPS via SSH para fazer o deploy. E necessario uma chave dedicada.
 
@@ -157,16 +149,61 @@ ssh -i ~/.ssh/deploy_key USUARIO@IP_DA_VPS "echo conexao ok"
 
 ---
 
-### 3. Tabela completa de Secrets
+### 2. GH_DEPLOY_KEY — Chave SSH para clonar o repositorio na VPS
+
+Usado pelo workflow `setup-vps.yml` para clonar o repositorio em `/opt/arch-analyzer/`.
+O pipeline de deploy dia-a-dia (`deploy.yml`) **nao usa esta chave** — ele transfere
+os manifests via SCP diretamente do runner.
+
+**Como configurar (uma vez na VPS):**
+
+```bash
+# 1. Gerar chave dedicada para o GitHub (na VPS, como o usuario de deploy)
+ssh-keygen -t ed25519 -f ~/.ssh/github_deploy -N ""
+
+# 2. Exibir a chave publica — copiar o conteudo
+cat ~/.ssh/github_deploy.pub
+```
+
+**Adicionar a chave publica como Deploy Key no GitHub:**
+
+`github.com/bwasistemas/hackathon → Settings → Deploy keys → Add deploy key`
+- Title: `VPS Deploy Key`
+- Key: colar o conteudo de `~/.ssh/github_deploy.pub`
+- Allow write access: **nao** (leitura e suficiente para clone)
+
+**Adicionar a chave privada como Secret no GitHub:**
+
+- `GH_DEPLOY_KEY`: conteudo de `~/.ssh/github_deploy` (chave privada)
+
+---
+
+### 3. GHCR_PAT — Token de longa duracao para pull de imagens
+
+O `GITHUB_TOKEN` do Actions expira ao fim do workflow. Se o KEDA precisar escalar
+o `ai-service` horas depois do deploy, o pull da imagem falharia com 403.
+
+**Como criar:**
+
+1. GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens
+2. Criar token com escopo `read:packages` no repositorio `bwasistemas/hackathon`
+3. Adicionar como secret `GHCR_PAT`
+
+O pipeline usa `GHCR_PAT` se disponivel, com fallback para `GITHUB_TOKEN`.
+
+---
+
+### 4. Tabela completa de Secrets
 
 | Secret | Descricao |
 |---|---|
-| `GH_DEPLOY_KEY` | Chave privada SSH de deploy (par gerado localmente, publica adicionada como Deploy Key no GitHub) |
-| `VPS_HOST` | IP publico da VPS |
+| `VPS_HOST` | IP publico ou hostname da VPS |
 | `VPS_USER` | Usuario SSH da VPS (`ubuntu`, `root`, etc.) |
-| `VPS_SSH_KEY` | Conteudo da chave privada SSH (sem passphrase) |
+| `VPS_SSH_KEY` | Conteudo da chave privada SSH para acesso do CI a VPS |
 | `VPS_SSH_PORT` | Porta SSH — omitir se for a padrao 22 |
+| `GH_DEPLOY_KEY` | Chave privada SSH para o `setup-vps.yml` clonar o repo na VPS |
 | `LETSENCRYPT_EMAIL` | Email para notificacoes e renovacao dos certs SSL |
+| `GHCR_PAT` | PAT com `read:packages` — evita 403 no KEDA pos-deploy |
 | `POSTGRES_USER` | Usuario do PostgreSQL |
 | `POSTGRES_PASSWORD` | Senha do PostgreSQL |
 | `RABBITMQ_USER` | Usuario do RabbitMQ |
@@ -175,23 +212,22 @@ ssh -i ~/.ssh/deploy_key USUARIO@IP_DA_VPS "echo conexao ok"
 | `JWT_SECRET_KEY` | Chave de assinatura dos JWTs (minimo 48 chars aleatorios) |
 | `ADMIN_USER` | Usuario admin da aplicacao |
 | `ADMIN_PASSWORD` | Senha do usuario admin da aplicacao |
-| `MINIO_ACCESS_KEY` | Usuario root do MinIO (MINIO_ROOT_USER) |
-| `MINIO_SECRET_KEY` | Senha root do MinIO (MINIO_ROOT_PASSWORD) |
+| `MINIO_ACCESS_KEY` | Usuario root do MinIO — minimo 3 caracteres |
+| `MINIO_SECRET_KEY` | Senha root do MinIO — minimo 8 caracteres |
 | `GRAFANA_USER` | Usuario do Grafana |
 | `GRAFANA_PASSWORD` | Senha do Grafana |
 
-O pipeline cria/atualiza os Kubernetes Secrets a cada deploy — nao e necessario
-rodar `setup-env.sh` manualmente antes do primeiro deploy.
+O pipeline cria/atualiza os Kubernetes Secrets a cada deploy automaticamente.
 
 ---
 
-### 4. Tabela de Variables (valores nao sensiveis)
+### 5. Tabela de Variables (valores nao sensiveis)
 
 Aba **Variables** (nao Secrets) na mesma tela:
 
 | Variable | Valor | Descricao |
 |---|---|---|
-| `REPO_SSH_URL` | `git@github.com:bwasistemas/hackathon.git` | URL SSH do repositorio (usado para clone na VPS) |
+| `REPO_SSH_URL` | `git@github.com:bwasistemas/hackathon.git` | URL SSH do repositorio (usado pelo `setup-vps.yml` para clone) |
 | `DOMAIN_PROD` | `archanalyzer.brunoretiro.com.br` | Dominio de producao |
 | `DOMAIN_HMG` | `archanalyzerhmg.brunoretiro.com.br` | Dominio de homologacao |
 | `MAX_REPLICAS` | `5` | Maximo de replicas do ai-service (KEDA) |
@@ -209,10 +245,9 @@ Aba **Variables** (nao Secrets) na mesma tela:
              criar registro A  archanalyzerhmg.brunoretiro.com.br → IP da VPS
 
 2. GitHub  : configurar todos os Secrets e Variables listados acima
-             (GH_PAT e VPS_SSH_KEY sao obrigatorios para o pipeline funcionar)
 
-3. Setup   : acionar o workflow "Setup VPS (first-time)" no GitHub Actions
-             GitHub → Actions → "Setup VPS (first-time)" → Run workflow
+3. Setup   : acionar o workflow "Setup VPS - first-time" no GitHub Actions
+             GitHub → Actions → "Setup VPS - first-time" → Run workflow
              - Instala automaticamente: Docker, Kind, kubectl, KEDA, Nginx, SSL, Portainer, Headlamp
              - Se o DNS do dominio HMG ainda nao propagou: marcar "Pular SSL HMG"
 
@@ -220,38 +255,32 @@ Aba **Variables** (nao Secrets) na mesma tela:
              push na branch hmg  → deploy automatico em homologacao (namespace arch-hmg)
 ```
 
-### Opcoes do workflow "Setup VPS (first-time)"
+### Opcoes do workflow "Setup VPS - first-time"
 
 | Input | Padrao | Quando usar |
 |---|---|---|
 | Pular SSL HMG | false | DNS de `archanalyzerhmg` ainda nao propagou |
 | Pular verificacao DNS | false | Tem certeza que o DNS esta correto |
-| Recriar .env | false | Precisa reconfigurar credenciais na VPS |
+| Recriar .env | true | Sempre recria o `.env` de docker-compose |
 
 ### O workflow detecta o que ja esta instalado
 
-O "Setup VPS (first-time)" verifica se o Kind ja esta instalado antes de rodar o `setup-vps.sh`.
+O "Setup VPS - first-time" verifica se o Kind ja esta instalado antes de rodar o `setup-vps.sh`.
 Pode ser acionado novamente a qualquer momento sem risco de duplicacao.
 
 ---
 
 ## Permissoes de diretorio na VPS
 
-O pipeline cria os diretorios de deploy em `/opt/arch-analyzer/prod` e `/opt/arch-analyzer/hmg`.
-O `setup-dirs.sh` (chamado pelo setup-vps.sh) cria esses diretorios como root e transfere
-a propriedade automaticamente para o usuario SSH (`$SUDO_USER`).
+O `setup-vps.yml` cria os diretorios `/opt/arch-analyzer/prod` e `/opt/arch-analyzer/hmg`
+como root e transfere a propriedade para o usuario SSH automaticamente.
 
-Se precisar corrigir manualmente (ex.: diretorio criado antes do fix):
+Se precisar corrigir manualmente:
 
 ```bash
 # Na VPS, substitua SEU_USUARIO pelo valor do secret VPS_USER
 sudo chown -R SEU_USUARIO:SEU_USUARIO /opt/arch-analyzer
 ```
-
-**Por que o deploy nao usa sudo:**
-O `mkdir -p "$DEPLOY_DIR"` no pipeline nao usa sudo porque o diretorio pai ja pertence
-ao usuario SSH apos o setup. Se aparecer `Permission denied` no mkdir, rode o comando
-acima na VPS e re-execute o deploy.
 
 ---
 
@@ -267,66 +296,75 @@ A chave publica nao esta no `authorized_keys` da VPS para o `VPS_USER`.
 ssh-copy-id -i ~/.ssh/deploy_key.pub VPS_USER@VPS_HOST
 ```
 
-### Git clone: `Invalid username or token`
-O `GITHUB_TOKEN` automatico do Actions nao funciona para clone em maquinas externas.
-Criar um PAT (escopo `repo`) e adicionar como secret `GH_PAT` conforme secao 1 acima.
-
-### mkdir: `Permission denied` em `/opt/arch-analyzer`
-O usuario SSH nao tem permissao de escrita no diretorio. Corrigir na VPS:
+### SCP falha com `permission denied`
+O usuario SSH nao tem permissao de escrita em `/tmp/` na VPS (improvavel).
+Verificar se o `VPS_USER` consegue escrever em `/tmp/`:
 ```bash
-sudo chown -R VPS_USER:VPS_USER /opt/arch-analyzer
+ssh VPS_USER@VPS_HOST "touch /tmp/test && rm /tmp/test && echo ok"
 ```
 
 ### kubectl: `dial tcp [::1]:8080: connect: connection refused`
 O cluster Kind nao esta instalado ou nao esta rodando. Solucao: acionar o workflow
-"Setup VPS (first-time)" ou rodar na VPS:
+"Setup VPS - first-time" ou rodar na VPS:
 ```bash
 sudo bash /opt/arch-analyzer/prod/.vps/setup-vps.sh SEU_EMAIL
 ```
 
 ### kubectl: `error validating data: failed to download openapi`
-Erro de validacao OpenAPI ao aplicar manifests. O pipeline ja usa `--validate=false`
-em todos os `kubectl apply` para contornar isso. Se aparecer em execucao manual:
+O pipeline ja usa `--validate=false` em todos os `kubectl apply`. Se aparecer em execucao manual:
 ```bash
 kubectl apply --validate=false -f manifest.yaml
 ```
 
 ### Deploy falha com "namespace not found"
 ```bash
-# Criar namespace manualmente:
 kubectl create namespace arch-prod
 kubectl create namespace arch-hmg
-# Depois re-executar o deploy
 ```
 
-### Nginx retorna 502
+### Nginx retorna 502 Bad Gateway
 ```bash
-# Verificar se os pods estao rodando:
+# Verificar se o socat esta rodando para a porta correta
+ss -tlnp | grep 3008
+# Verificar se os pods estao rodando
 kubectl get pods -n arch-prod
-# Verificar logs do frontend:
-kubectl logs -n arch-prod deployment/frontend
+# Recriar o socat manualmente se necessario
+~/.socat-30080.sh
 ```
+
+### GHCR: 403 Forbidden ao escalar pods com KEDA
+O `GITHUB_TOKEN` expira ao fim do workflow. Configurar o secret `GHCR_PAT`
+(PAT com escopo `read:packages`) conforme a secao 3 acima.
 
 ### GHCR: permission denied ao fazer pull manual
 ```bash
-# O GITHUB_TOKEN expira com o workflow. Para pull manual, usar o GH_PAT:
-echo "ghp_SEU_GH_PAT" | docker login ghcr.io -u SEU_USUARIO --password-stdin
+# Usar o GHCR_PAT para autenticar manualmente
+echo "ghp_SEU_GHCR_PAT" | docker login ghcr.io -u SEU_USUARIO --password-stdin
 kubectl create secret docker-registry ghcr-pull-secret \
   --docker-server=ghcr.io --docker-username=SEU_USUARIO \
-  --docker-password=ghp_SEU_GH_PAT -n arch-prod --dry-run=client -o yaml | kubectl apply -f -
+  --docker-password=ghp_SEU_GHCR_PAT -n arch-prod --dry-run=client -o yaml | kubectl apply -f -
 ```
 
 ### KEDA nao esta escalando
 ```bash
-# Verificar estado do ScaledObject:
+# Verificar estado do ScaledObject
 kubectl describe scaledobject ai-service-scaler -n arch-prod
-# Verificar se a fila existe no RabbitMQ:
+# Verificar se a fila existe no RabbitMQ
 kubectl exec -n arch-prod statefulset/rabbitmq -- rabbitmqctl list_queues
 ```
 
-### Ver logs do ai-service
+### Ver logs dos servicos
 ```bash
 kubectl logs -n arch-prod deployment/ai-service --follow
-# Verificar autoscaling:
+kubectl logs -n arch-prod deployment/upload-service --tail=50
+kubectl logs -n arch-prod deployment/frontend --tail=50
+# Ver eventos de um pod com problema
+kubectl describe pod -n arch-prod -l app=ai-service
+```
+
+### Verificar status geral
+```bash
+kubectl get pods -n arch-prod -o wide
+kubectl get pods -n arch-hmg -o wide
 kubectl get hpa -n arch-prod
 ```
