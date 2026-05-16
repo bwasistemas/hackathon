@@ -1,4 +1,4 @@
-name: Setup VPS (first-time)
+name: Setup VPS - first-time
 
 # Acionado manualmente pelo GitHub UI ou CLI.
 # Faz o setup completo da VPS: clone dos repos, .env, Nginx e SSL para HMG.

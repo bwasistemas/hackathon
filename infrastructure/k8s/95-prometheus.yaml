@@ -84,11 +84,12 @@ metadata:
 spec:
   selector:
     app: prometheus
+  type: NodePort
   ports:
     - name: http
       port: 9090
       targetPort: 9090
-  type: ClusterIP
+      nodePort: ${PROMETHEUS_NODEPORT}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -113,6 +114,10 @@ spec:
             - "--storage.tsdb.path=/prometheus"
             - "--web.enable-lifecycle"
             - "--storage.tsdb.retention.time=15d"
+            - "--web.external-url=https://${DOMAIN}/prometheus/"
+            - "--web.route-prefix=/"
+            - "--web.external-url=https://${DOMAIN}/prometheus/"
+            - "--web.route-prefix=/"
           ports:
             - containerPort: 9090
           volumeMounts:

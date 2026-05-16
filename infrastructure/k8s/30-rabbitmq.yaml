@@ -49,6 +49,21 @@ spec:
       targetPort: 15692
   type: ClusterIP
 ---
+# NodePort Service — expoe management via Nginx em /rabbitmq/
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-management-np
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+    - name: management
+      port: 15672
+      targetPort: 15672
+      nodePort: ${RABBITMQ_MGMT_NODEPORT}
+  type: NodePort
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -84,6 +99,8 @@ spec:
                 secretKeyRef:
                   name: arch-secrets
                   key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS
+              value: "-rabbitmq_management path_prefix \"/rabbitmq\""
             - name: TZ
               valueFrom:
                 configMapKeyRef:

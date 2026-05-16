@@ -9,6 +9,30 @@ spec:
     requests:
       storage: 5Gi
 ---
+# Datasources provisionados automaticamente (Prometheus + Loki)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://prometheus:9090
+        access: proxy
+        isDefault: true
+        jsonData:
+          timeInterval: "15s"
+      - name: Loki
+        type: loki
+        url: http://loki:3100
+        access: proxy
+        isDefault: false
+        jsonData:
+          maxLines: 1000
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -20,7 +44,8 @@ spec:
     - name: http
       port: 3000
       targetPort: 3000
-  type: ClusterIP
+      nodePort: ${GRAFANA_NODEPORT}
+  type: NodePort
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -57,6 +82,10 @@ spec:
                   key: GRAFANA_PASSWORD
             - name: GF_USERS_ALLOW_SIGN_UP
               value: "false"
+            - name: GF_SERVER_ROOT_URL
+              value: "https://${DOMAIN}/grafana/"
+            - name: GF_SERVER_SERVE_FROM_SUB_PATH
+              value: "true"
             - name: TZ
               valueFrom:
                 configMapKeyRef:
@@ -65,12 +94,14 @@ spec:
           volumeMounts:
             - name: grafana-data
               mountPath: /var/lib/grafana
+            - name: grafana-datasources
+              mountPath: /etc/grafana/provisioning/datasources
             - name: localtime
               mountPath: /etc/localtime
               readOnly: true
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /grafana/api/health
               port: 3000
             initialDelaySeconds: 15
             periodSeconds: 10
@@ -78,7 +109,7 @@ spec:
             failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /api/health
+              path: /grafana/api/health
               port: 3000
             initialDelaySeconds: 30
             periodSeconds: 30
@@ -95,6 +126,9 @@ spec:
         - name: grafana-data
           persistentVolumeClaim:
             claimName: grafana-data
+        - name: grafana-datasources
+          configMap:
+            name: grafana-datasources
         - name: localtime
           hostPath:
             path: /etc/localtime

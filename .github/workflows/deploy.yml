@@ -115,31 +115,51 @@ jobs:
         id: vars
         run: |
           if [ "${{ github.ref_name }}" = "main" ]; then
-            echo "deploy_dir=/opt/arch-analyzer/prod"                                         >> "$GITHUB_OUTPUT"
-            echo "namespace=arch-prod"                                                         >> "$GITHUB_OUTPUT"
-            echo "frontend_nodeport=30080"                                                     >> "$GITHUB_OUTPUT"
+            echo "namespace=arch-prod"                                                                     >> "$GITHUB_OUTPUT"
+            echo "domain=${{ vars.DOMAIN_PROD || 'archanalyzer.brunoretiro.com.br' }}"                   >> "$GITHUB_OUTPUT"
+            echo "frontend_nodeport=30080"                                                                >> "$GITHUB_OUTPUT"
+            echo "grafana_nodeport=30082"                                                                 >> "$GITHUB_OUTPUT"
+            echo "prometheus_nodeport=30084"                                                              >> "$GITHUB_OUTPUT"
+            echo "rabbitmq_mgmt_nodeport=30086"                                                           >> "$GITHUB_OUTPUT"
             echo "allowed_origins=https://${{ vars.DOMAIN_PROD || 'archanalyzer.brunoretiro.com.br' }}" >> "$GITHUB_OUTPUT"
           else
-            echo "deploy_dir=/opt/arch-analyzer/hmg"                                          >> "$GITHUB_OUTPUT"
-            echo "namespace=arch-hmg"                                                          >> "$GITHUB_OUTPUT"
-            echo "frontend_nodeport=30081"                                                     >> "$GITHUB_OUTPUT"
+            echo "namespace=arch-hmg"                                                                     >> "$GITHUB_OUTPUT"
+            echo "domain=${{ vars.DOMAIN_HMG || 'archanalyzerhmg.brunoretiro.com.br' }}"                >> "$GITHUB_OUTPUT"
+            echo "frontend_nodeport=30081"                                                                >> "$GITHUB_OUTPUT"
+            echo "grafana_nodeport=30083"                                                                 >> "$GITHUB_OUTPUT"
+            echo "prometheus_nodeport=30085"                                                              >> "$GITHUB_OUTPUT"
+            echo "rabbitmq_mgmt_nodeport=30087"                                                           >> "$GITHUB_OUTPUT"
             echo "allowed_origins=https://${{ vars.DOMAIN_HMG || 'archanalyzerhmg.brunoretiro.com.br' }}" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copiar manifests para VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          source: "infrastructure/k8s"
+          target: "/tmp/arch-k8s-${{ steps.vars.outputs.namespace }}"
+          rm: true
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         env:
-          REPO_SSH_URL:               ${{ vars.REPO_SSH_URL }}
-          GH_DEPLOY_KEY:              ${{ secrets.GH_DEPLOY_KEY }}
           GITHUB_TOKEN:               ${{ secrets.GITHUB_TOKEN }}
           GHCR_PAT:                   ${{ secrets.GHCR_PAT }}
           GITHUB_ACTOR:               ${{ github.actor }}
           IMAGE_PREFIX:               ghcr.io/bwasistemas/hackathon
           IMAGE_TAG:                  ${{ needs.build-push.outputs.image_tag }}
-          BRANCH:                     ${{ github.ref_name }}
-          DEPLOY_DIR:                 ${{ steps.vars.outputs.deploy_dir }}
           NAMESPACE:                  ${{ steps.vars.outputs.namespace }}
+          DOMAIN:                     ${{ steps.vars.outputs.domain }}
           FRONTEND_NODEPORT:          ${{ steps.vars.outputs.frontend_nodeport }}
+          GRAFANA_NODEPORT:           ${{ steps.vars.outputs.grafana_nodeport }}
+          PROMETHEUS_NODEPORT:        ${{ steps.vars.outputs.prometheus_nodeport }}
+          RABBITMQ_MGMT_NODEPORT:     ${{ steps.vars.outputs.rabbitmq_mgmt_nodeport }}
           ALLOWED_ORIGINS:            ${{ steps.vars.outputs.allowed_origins }}
           POSTGRES_DB:                ${{ vars.POSTGRES_DB || 'fiap' }}
           MINIO_BUCKET:               ${{ vars.MINIO_BUCKET || 'fiap' }}
@@ -163,7 +183,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_SSH_PORT || '22' }}
-          envs: REPO_SSH_URL,GH_DEPLOY_KEY,GITHUB_TOKEN,GHCR_PAT,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,BRANCH,DEPLOY_DIR,NAMESPACE,FRONTEND_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
+          envs: GITHUB_TOKEN,GHCR_PAT,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,NAMESPACE,DOMAIN,FRONTEND_NODEPORT,GRAFANA_NODEPORT,PROMETHEUS_NODEPORT,RABBITMQ_MGMT_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
           script: |
             set -e
 
@@ -191,26 +211,7 @@ jobs:
               exit 1
             fi
 
-            # Configurar chave SSH de deploy para o GitHub
-            mkdir -p ~/.ssh
-            echo "$GH_DEPLOY_KEY" > ~/.ssh/github_deploy
-            chmod 600 ~/.ssh/github_deploy
-            ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
-            export GIT_SSH_COMMAND="ssh -i ~/.ssh/github_deploy -o StrictHostKeyChecking=no"
-
-            REPO_SSH="$REPO_SSH_URL"
-
-            # Atualizar codigo do repositorio
-            mkdir -p "$DEPLOY_DIR"
-            if [ -d "$DEPLOY_DIR/.git" ]; then
-              git -C "$DEPLOY_DIR" remote set-url origin "$REPO_SSH"
-              git -C "$DEPLOY_DIR" fetch origin "$BRANCH"
-              git -C "$DEPLOY_DIR" reset --hard "origin/$BRANCH"
-            else
-              git clone --branch "$BRANCH" "$REPO_SSH" "$DEPLOY_DIR"
-            fi
-
-            MANIFESTS_DIR="$DEPLOY_DIR/infrastructure/k8s"
+            MANIFESTS_DIR="/tmp/arch-k8s-${NAMESPACE}/k8s"
 
             # Garantir que envsubst está disponível
             command -v envsubst &>/dev/null || apt-get install -y gettext-base
@@ -229,30 +230,35 @@ jobs:
             fi
 
             # ── NodePort no host (socat para Kind sem extraPortMappings) ──────
-            # Se o cluster foi criado sem extraPortMappings, localhost:NODEPORT nao escuta.
-            # Socat cria o encaminhamento; script de restart adicionado ao crontab (@reboot).
-            if ! ss -tlnp 2>/dev/null | grep -q ":${FRONTEND_NODEPORT} "; then
-              CTRL_IP=$(docker inspect kind-control-plane \
-                --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
-                2>/dev/null | head -1 || echo "")
-              if [ -n "$CTRL_IP" ]; then
-                pkill -f "socat.*:${FRONTEND_NODEPORT}" 2>/dev/null || true
-                SOCAT_SCRIPT="$HOME/.socat-${FRONTEND_NODEPORT}.sh"
-                printf '#!/bin/bash\n' > "$SOCAT_SCRIPT"
-                printf 'IP=$(docker inspect kind-control-plane --format '"'"'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'"'"' 2>/dev/null | head -1)\n' >> "$SOCAT_SCRIPT"
-                printf '[ -z "$IP" ] && exit 1\n' >> "$SOCAT_SCRIPT"
-                printf 'pkill -f "socat.*:%s" 2>/dev/null || true\n' "${FRONTEND_NODEPORT}" >> "$SOCAT_SCRIPT"
-                printf 'nohup socat TCP-LISTEN:%s,bind=127.0.0.1,fork,reuseaddr TCP:${IP}:%s >/tmp/socat-%s.log 2>&1 &\n' "${FRONTEND_NODEPORT}" "${FRONTEND_NODEPORT}" "${FRONTEND_NODEPORT}" >> "$SOCAT_SCRIPT"
-                chmod +x "$SOCAT_SCRIPT"
-                (crontab -l 2>/dev/null | grep -v "socat-${FRONTEND_NODEPORT}"; echo "@reboot $SOCAT_SCRIPT") | crontab -
-                "$SOCAT_SCRIPT"
-                sleep 2
-                echo "socat configurado (persistente via crontab): localhost:${FRONTEND_NODEPORT} → kind-control-plane (${CTRL_IP}):${FRONTEND_NODEPORT}"
-                echo "NOTA: para solucao permanente recrie o cluster Kind via 'Setup VPS (first-time)'"
-              else
-                echo "AVISO: kind-control-plane nao encontrado — porta ${FRONTEND_NODEPORT} pode nao ser acessivel"
+            setup_socat_port() {
+              local PORT="$1"
+              if ! ss -tlnp 2>/dev/null | grep -q ":${PORT} "; then
+                local CTRL_IP
+                CTRL_IP=$(docker inspect kind-control-plane \
+                  --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
+                  2>/dev/null | head -1 || echo "")
+                if [ -n "$CTRL_IP" ]; then
+                  pkill -f "socat.*:${PORT}" 2>/dev/null || true
+                  local SOCAT_SCRIPT="$HOME/.socat-${PORT}.sh"
+                  printf '#!/bin/bash\n' > "$SOCAT_SCRIPT"
+                  printf 'IP=$(docker inspect kind-control-plane --format '"'"'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'"'"' 2>/dev/null | head -1)\n' >> "$SOCAT_SCRIPT"
+                  printf '[ -z "$IP" ] && exit 1\n' >> "$SOCAT_SCRIPT"
+                  printf 'pkill -f "socat.*:%s" 2>/dev/null || true\n' "${PORT}" >> "$SOCAT_SCRIPT"
+                  printf 'nohup socat TCP-LISTEN:%s,bind=127.0.0.1,fork,reuseaddr TCP:${IP}:%s >/tmp/socat-%s.log 2>&1 &\n' "${PORT}" "${PORT}" "${PORT}" >> "$SOCAT_SCRIPT"
+                  chmod +x "$SOCAT_SCRIPT"
+                  (crontab -l 2>/dev/null | grep -v "socat-${PORT}"; echo "@reboot $SOCAT_SCRIPT") | crontab -
+                  "$SOCAT_SCRIPT"
+                  sleep 1
+                  echo "socat: localhost:${PORT} -> kind-control-plane (${CTRL_IP}):${PORT}"
+                else
+                  echo "AVISO: kind-control-plane nao encontrado -- porta ${PORT} pode nao ser acessivel"
+                fi
               fi
-            fi
+            }
+            setup_socat_port "$FRONTEND_NODEPORT"
+            setup_socat_port "$GRAFANA_NODEPORT"
+            setup_socat_port "$PROMETHEUS_NODEPORT"
+            setup_socat_port "$RABBITMQ_MGMT_NODEPORT"
 
             # ── KEDA (instala se CRDs ausentes) ──────────────────────────────
             if ! kubectl get crd scaledobjects.keda.sh &>/dev/null 2>&1; then
@@ -303,11 +309,13 @@ jobs:
               --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
             # ── Aplicar manifests ─────────────────────────────────────────────
-            ENVSUBST_VARS='${IMAGE_PREFIX} ${IMAGE_TAG} ${POSTGRES_DB} ${MINIO_BUCKET} ${TZ} ${ALLOWED_ORIGINS} ${FRONTEND_NODEPORT} ${MAX_REPLICAS} ${QUEUE_MESSAGES_PER_REPLICA}'
+            ENVSUBST_VARS='${IMAGE_PREFIX} ${IMAGE_TAG} ${NAMESPACE} ${DOMAIN} ${POSTGRES_DB} ${MINIO_BUCKET} ${TZ} ${ALLOWED_ORIGINS} ${FRONTEND_NODEPORT} ${GRAFANA_NODEPORT} ${PROMETHEUS_NODEPORT} ${RABBITMQ_MGMT_NODEPORT} ${MAX_REPLICAS} ${QUEUE_MESSAGES_PER_REPLICA}'
             for manifest in $(ls "$MANIFESTS_DIR"/*.yaml | sort); do
               echo "Aplicando: $(basename $manifest)..."
               envsubst "$ENVSUBST_VARS" < "$manifest" | kubectl apply --validate=false -n "$NAMESPACE" -f -
             done
+
+            rm -rf "/tmp/arch-k8s-${NAMESPACE}"
 
             # ── Aguardar rollouts ─────────────────────────────────────────────
             for deploy in upload-service ai-service report-service frontend prometheus grafana; do
