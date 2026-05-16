@@ -296,10 +296,13 @@ server {{
 """
 
 config = http_block + (https_block if has_ssl else "")
-with open('/etc/nginx/sites-available/default', 'w') as f:
+with open('/etc/nginx/sites-available/arch-analyzer', 'w') as f:
     f.write(config)
 print("Config Nginx gerada")
 PYEOF
+    # Ativar arch-analyzer e desativar default para evitar conflito de default_server
+    ln -sf /etc/nginx/sites-available/arch-analyzer /etc/nginx/sites-enabled/arch-analyzer 2>/dev/null || true
+    rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 }
 
 setup_deploy_sudoers() {
@@ -316,6 +319,7 @@ BACKUP="${NGINX_INSTALLED}.bak.$(date +%s)"
 [ -f "$NGINX_INSTALLED" ] && cp "$NGINX_INSTALLED" "$BACKUP"
 cat > "$NGINX_INSTALLED"
 ln -sf "$NGINX_INSTALLED" "$NGINX_ENABLED" 2>/dev/null || true
+rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 if nginx -t 2>&1; then
     systemctl reload nginx
     echo "Nginx recarregado."
