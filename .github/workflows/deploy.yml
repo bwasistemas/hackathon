@@ -201,15 +201,19 @@ jobs:
             REPO_SSH="$REPO_SSH_URL"
             PROD_DIR="/opt/arch-analyzer/prod"
 
-            # ── Garantir configuracao completa do ambiente (idempotente) ─────
-            # Clona prod (scripts de setup) se ainda nao existir
+            # ── Garantir configuracao completa de prod E hmg (idempotente) ──
+            # Os scripts ficam em prod/.vps/ mas configuram ambos os ambientes:
+            #   setup-dirs.sh  → clona/atualiza prod (main) e hmg (hmg)
+            #   setup-env.sh   → cria .env para prod e hmg a partir do .env.example
+            #   setup-nginx.sh → configura Nginx para prod e hmg
+            # Clona prod apenas se ainda nao existir (bootstrap inicial)
             if [ ! -d "$PROD_DIR/.git" ]; then
-              echo "Clonando repositorio prod para scripts de setup..."
+              echo "Clonando repositorio prod (branch main) para scripts de setup..."
               sudo mkdir -p "/opt/arch-analyzer"
               sudo chown -R "$(whoami):$(whoami)" "/opt/arch-analyzer"
               git clone --branch main --depth 1 "$REPO_SSH" "$PROD_DIR"
             fi
-            echo "Garantindo configuracao do ambiente (setup-deploy.sh)..."
+            echo "Garantindo configuracao dos ambientes prod e hmg (setup-deploy.sh)..."
             sudo -E bash "$PROD_DIR/.vps/setup-deploy.sh" \
               --non-interactive \
               --skip-ssl-hmg \
