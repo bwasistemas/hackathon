@@ -55,7 +55,7 @@ Instalador completo da VPS. Executado **uma vez** no primeiro setup.
 
 O que instala e configura:
 - Docker Engine
-- Kind (Kubernetes in Docker) — cria cluster com portas mapeadas: 30080, 30443, 30444
+- Kind (Kubernetes in Docker) — cria cluster com portas mapeadas: 30080 (prod), 30081 (hmg), 30443, 30444
 - kubectl, Helm
 - KEDA v2.14 (autoscaler)
 - Nginx + certbot (SSL Let's Encrypt para o dominio de producao)
@@ -119,6 +119,7 @@ Aplica o template `nginx-archanalyzer.conf` no Nginx:
 
 Com `--with-hmg`: inclui o bloco HTTPS de homologacao (requer certificado ja gerado).
 Sem a flag: aplica apenas o bloco de producao.
+Desativa o site `default` do Nginx para evitar conflito de `default_server` com `arch-analyzer`.
 
 Chamado por: `setup-deploy.sh` e `setup-ssl-hmg.sh` (com `--with-hmg`).
 Uso manual: `sudo bash setup-nginx.sh [--with-hmg]`
