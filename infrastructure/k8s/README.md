@@ -175,6 +175,18 @@ Nao expoe NodePort — acesso exclusivamente via datasource do Grafana em `/graf
 
 ---
 
+### `98-promtail.yaml`
+
+| Recurso | Tipo | Descricao |
+|---|---|---|
+| `promtail-config` | ConfigMap | Configuracao do Promtail: scrape de `/var/log/pods/${NAMESPACE}_*/*/*.log` com pipeline CRI e envio para Loki |
+| `promtail` | ServiceAccount | Identidade do DaemonSet (sem ClusterRole necessario — acesso apenas ao filesystem do host) |
+| `promtail` | DaemonSet | Agente de coleta de logs rodando em cada no; monta `/var/log/pods` e `/var/log/containers` do host |
+
+A variavel `${NAMESPACE}` no `__path__` e substituida pelo `envsubst`, garantindo que cada ambiente (prod/hmg) colete apenas seus proprios logs mesmo compartilhando o cluster.
+
+---
+
 ## Ordem de dependencias
 
 ```
@@ -193,7 +205,8 @@ Nao expoe NodePort — acesso exclusivamente via datasource do Grafana em `/graf
     │
     ├─ 95-prometheus      → raspa metricas de todos os servicos e pods
     ├─ 96-grafana         → datasources: prometheus (95) + loki (97)
-    └─ 97-loki            → coleta logs dos pods
+    ├─ 97-loki            → recebe logs enviados pelo promtail (98)
+    └─ 98-promtail        → coleta logs dos pods e envia para loki (97)
 ```
 
 ## NodePorts por ambiente

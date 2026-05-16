@@ -116,8 +116,6 @@ spec:
             - "--storage.tsdb.retention.time=15d"
             - "--web.external-url=https://${DOMAIN}/prometheus/"
             - "--web.route-prefix=/"
-            - "--web.external-url=https://${DOMAIN}/prometheus/"
-            - "--web.route-prefix=/"
           ports:
             - containerPort: 9090
           volumeMounts:
@@ -172,7 +170,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: prometheus
+  name: prometheus-${NAMESPACE}
 rules:
   - apiGroups: [""]
     resources:
@@ -192,11 +190,11 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: prometheus
+  name: prometheus-${NAMESPACE}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: prometheus
+  name: prometheus-${NAMESPACE}
 subjects:
   - kind: ServiceAccount
     name: prometheus

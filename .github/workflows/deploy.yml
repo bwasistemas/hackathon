@@ -146,6 +146,17 @@ jobs:
           target: "/tmp/arch-k8s-${{ steps.vars.outputs.namespace }}"
           rm: true
 
+      - name: Copiar config Nginx para VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          source: ".vps/nginx-archanalyzer.conf"
+          target: "/tmp/arch-nginx-update"
+          rm: true
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         env:
@@ -178,12 +189,14 @@ jobs:
           MINIO_SECRET_KEY:           ${{ secrets.MINIO_SECRET_KEY }}
           GRAFANA_USER:               ${{ secrets.GRAFANA_USER }}
           GRAFANA_PASSWORD:           ${{ secrets.GRAFANA_PASSWORD }}
+          DOMAIN_PROD:                ${{ vars.DOMAIN_PROD || 'archanalyzer.brunoretiro.com.br' }}
+          DOMAIN_HMG:                 ${{ vars.DOMAIN_HMG || 'archanalyzerhmg.brunoretiro.com.br' }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_SSH_PORT || '22' }}
-          envs: GITHUB_TOKEN,GHCR_PAT,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,NAMESPACE,DOMAIN,FRONTEND_NODEPORT,GRAFANA_NODEPORT,PROMETHEUS_NODEPORT,RABBITMQ_MGMT_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
+          envs: GITHUB_TOKEN,GHCR_PAT,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,NAMESPACE,DOMAIN,DOMAIN_PROD,DOMAIN_HMG,FRONTEND_NODEPORT,GRAFANA_NODEPORT,PROMETHEUS_NODEPORT,RABBITMQ_MGMT_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
           script: |
             set -e
 
@@ -196,6 +209,11 @@ jobs:
             [ -z "$JWT_SECRET_KEY" ]    && MISSING="$MISSING JWT_SECRET_KEY"
             [ -z "$MINIO_ACCESS_KEY" ]  && MISSING="$MISSING MINIO_ACCESS_KEY"
             [ -z "$MINIO_SECRET_KEY" ]  && MISSING="$MISSING MINIO_SECRET_KEY"
+            [ -z "$OPENAI_API_KEY" ]    && MISSING="$MISSING OPENAI_API_KEY"
+            [ -z "$ADMIN_USER" ]        && MISSING="$MISSING ADMIN_USER"
+            [ -z "$ADMIN_PASSWORD" ]    && MISSING="$MISSING ADMIN_PASSWORD"
+            [ -z "$GRAFANA_USER" ]      && MISSING="$MISSING GRAFANA_USER"
+            [ -z "$GRAFANA_PASSWORD" ]  && MISSING="$MISSING GRAFANA_PASSWORD"
             if [ -n "$MISSING" ]; then
               echo "ERRO: Secrets obrigatorios nao configurados no repositorio:$MISSING"
               echo "Configure esses valores em Settings > Secrets and variables > Actions"
@@ -227,6 +245,26 @@ jobs:
                 echo "Execute o workflow 'Setup VPS (first-time)' antes do primeiro deploy."
                 exit 1
               fi
+            fi
+
+            # ── Atualizar Nginx se o template mudou ───────────────────────────
+            NGINX_TEMPLATE="/tmp/arch-nginx-update/.vps/nginx-archanalyzer.conf"
+            NGINX_INSTALLED="/etc/nginx/sites-available/arch-analyzer"
+            if [ -f "$NGINX_TEMPLATE" ]; then
+              NGINX_RENDERED=$(sed \
+                -e "s|__DOMAIN_PROD__|${DOMAIN_PROD}|g" \
+                -e "s|__DOMAIN_HMG__|${DOMAIN_HMG}|g" \
+                "$NGINX_TEMPLATE")
+              CURRENT_MD5=$(md5sum "$NGINX_INSTALLED" 2>/dev/null | cut -d' ' -f1 || echo "none")
+              NEW_MD5=$(echo "$NGINX_RENDERED" | md5sum | cut -d' ' -f1)
+              if [ "$CURRENT_MD5" != "$NEW_MD5" ]; then
+                echo "Atualizando config Nginx..."
+                echo "$NGINX_RENDERED" | sudo /usr/local/bin/arch-nginx-apply \
+                  || echo "AVISO: falha ao atualizar Nginx — verifique a config manualmente."
+              else
+                echo "Config Nginx sem alteracoes."
+              fi
+              rm -rf /tmp/arch-nginx-update
             fi
 
             # ── NodePort no host (socat para Kind sem extraPortMappings) ──────
@@ -318,14 +356,33 @@ jobs:
             rm -rf "/tmp/arch-k8s-${NAMESPACE}"
 
             # ── Aguardar rollouts ─────────────────────────────────────────────
-            for deploy in upload-service ai-service report-service frontend prometheus grafana; do
+            ROLLOUT_FAILED=false
+
+            # Servicos criticos — falha aqui para o deploy
+            for deploy in upload-service ai-service report-service frontend; do
               echo "Aguardando rollout de $deploy..."
-              kubectl rollout status deployment/"$deploy" -n "$NAMESPACE" --timeout=180s || true
+              if ! kubectl rollout status deployment/"$deploy" -n "$NAMESPACE" --timeout=180s; then
+                echo "FALHA: rollout de $deploy nao concluiu — verifique os logs do pod."
+                ROLLOUT_FAILED=true
+              fi
             done
             for ss in postgres rabbitmq minio; do
               echo "Aguardando StatefulSet $ss..."
-              kubectl rollout status statefulset/"$ss" -n "$NAMESPACE" --timeout=180s || true
+              if ! kubectl rollout status statefulset/"$ss" -n "$NAMESPACE" --timeout=180s; then
+                echo "FALHA: rollout de $ss nao concluiu."
+                ROLLOUT_FAILED=true
+              fi
             done
+
+            # Observabilidade — nao critica; falha e reportada mas nao para o deploy
+            for deploy in prometheus grafana loki; do
+              echo "Aguardando rollout de $deploy (observabilidade)..."
+              kubectl rollout status deployment/"$deploy" -n "$NAMESPACE" --timeout=120s || \
+                echo "AVISO: rollout de $deploy nao concluiu — observabilidade pode estar degradada."
+            done
+            echo "Aguardando DaemonSet promtail (observabilidade)..."
+            kubectl rollout status daemonset/promtail -n "$NAMESPACE" --timeout=60s || \
+              echo "AVISO: promtail DaemonSet nao concluiu — coleta de logs pode estar degradada."
 
             # ── Smoke test ────────────────────────────────────────────────────
             echo "Smoke test na porta $FRONTEND_NODEPORT..."
@@ -368,3 +425,10 @@ jobs:
             echo "=== Deploy concluido ==="
             echo "Namespace: $NAMESPACE"
             echo "Tag      : $IMAGE_TAG"
+
+            if [ "$ROLLOUT_FAILED" = "true" ]; then
+              echo ""
+              echo "ATENCAO: um ou mais servicos criticos nao completaram o rollout."
+              echo "Verifique os logs acima e o status dos pods antes de considerar o deploy estavel."
+              exit 1
+            fi

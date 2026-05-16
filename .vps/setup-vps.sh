@@ -302,6 +302,38 @@ print("Config Nginx gerada")
 PYEOF
 }
 
+setup_deploy_sudoers() {
+    hdr "Configurando sudoers para deploy automatico"
+    DEPLOY_USER="${SUDO_USER:-ubuntu}"
+
+    # Script wrapper: permite que o usuario de deploy recarregue o Nginx
+    # sem senha, recebendo a nova config via stdin.
+    cat > /usr/local/bin/arch-nginx-apply << 'WRAPPER'
+#!/bin/bash
+set -e
+NGINX_INSTALLED="/etc/nginx/sites-available/arch-analyzer"
+NGINX_ENABLED="/etc/nginx/sites-enabled/arch-analyzer"
+BACKUP="${NGINX_INSTALLED}.bak.$(date +%s)"
+[ -f "$NGINX_INSTALLED" ] && cp "$NGINX_INSTALLED" "$BACKUP"
+cat > "$NGINX_INSTALLED"
+ln -sf "$NGINX_INSTALLED" "$NGINX_ENABLED" 2>/dev/null || true
+if nginx -t 2>&1; then
+    systemctl reload nginx
+    echo "Nginx recarregado."
+else
+    echo "AVISO: config invalida — revertendo backup."
+    [ -f "$BACKUP" ] && cp "$BACKUP" "$NGINX_INSTALLED" && systemctl reload nginx || true
+    exit 1
+fi
+WRAPPER
+    chmod +x /usr/local/bin/arch-nginx-apply
+
+    SUDOERS_FILE="/etc/sudoers.d/arch-deploy-nginx"
+    echo "${DEPLOY_USER} ALL=(root) NOPASSWD: /usr/local/bin/arch-nginx-apply" > "$SUDOERS_FILE"
+    chmod 0440 "$SUDOERS_FILE"
+    ok "sudoers configurado para usuario '${DEPLOY_USER}' (nginx reload sem senha)"
+}
+
 configure_nginx() {
     hdr "Configurando Nginx"
     [ -f /etc/nginx/sites-available/default ] && \
@@ -811,6 +843,7 @@ main() {
     install_nginx
     free_ports
     configure_nginx
+    setup_deploy_sudoers  # wrapper nginx + sudoers para deploy automatico
     create_kind_cluster  # cria com portas 30080, 30081, 30444 mapeadas
     install_keda         # autoscaling por fila RabbitMQ
     install_portainer

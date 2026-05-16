@@ -193,7 +193,22 @@ O pipeline usa `GHCR_PAT` se disponivel, com fallback para `GITHUB_TOKEN`.
 
 ---
 
-### 4. Tabela completa de Secrets
+### 4. OPENAI_API_KEY, ADMIN_USER, ADMIN_PASSWORD — obrigatorios desde esta versao
+
+A partir desta versao o deploy valida todos os secrets criticos antes de aplicar.
+Os seguintes secrets, anteriormente opcionais, agora sao obrigatorios:
+
+| Secret | Descricao |
+|---|---|
+| `OPENAI_API_KEY` | Chave de API para o ai-service chamar o LLM |
+| `ADMIN_USER` | Usuario administrador da aplicacao |
+| `ADMIN_PASSWORD` | Senha do usuario administrador |
+
+Se ja estiverem configurados, nenhuma acao e necessaria.
+
+---
+
+### 5. Tabela completa de Secrets
 
 | Secret | Descricao |
 |---|---|
@@ -235,6 +250,32 @@ Aba **Variables** (nao Secrets) na mesma tela:
 | `POSTGRES_DB` | `fiap` | Nome do banco de dados |
 | `MINIO_BUCKET` | `fiap` | Nome do bucket MinIO |
 | `TZ` | `America/Sao_Paulo` | Fuso horario dos containers |
+
+---
+
+## Acoes manuais necessarias apos esta atualizacao
+
+### Re-executar "Setup VPS - first-time" uma vez
+
+O `deploy.yml` agora atualiza o Nginx automaticamente a cada push (sem precisar
+acionar o setup manualmente). Para isso, o `setup-vps.sh` precisa ter criado:
+
+- `/usr/local/bin/arch-nginx-apply` — script wrapper de reload do Nginx
+- `/etc/sudoers.d/arch-deploy-nginx` — permissao para o deploy user recarregar o Nginx sem senha
+
+**Como ativar:**
+
+```
+GitHub → Actions → "Setup VPS - first-time" → Run workflow
+```
+
+Pode marcar "Pular SSL HMG" se o cert HMG ja existir. O workflow e idempotente.
+Apos esta execucao unica, todos os deploys subsequentes atualizarao o Nginx automaticamente.
+
+> Se preferir ativar manualmente na VPS:
+> ```bash
+> sudo bash /opt/arch-analyzer/prod/.vps/setup-vps.sh SEU_EMAIL
+> ```
 
 ---
 
