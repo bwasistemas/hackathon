@@ -200,9 +200,7 @@ jobs:
 
             REPO_SSH="$REPO_SSH_URL"
 
-            # ── Atualizar repositorio do ambiente correto ─────────────────────
-            # prod deploys → /opt/arch-analyzer/prod (branch main)
-            # hmg  deploys → /opt/arch-analyzer/hmg  (branch hmg)
+            # Atualizar codigo do repositorio
             mkdir -p "$DEPLOY_DIR"
             if [ -d "$DEPLOY_DIR/.git" ]; then
               git -C "$DEPLOY_DIR" remote set-url origin "$REPO_SSH"
@@ -210,31 +208,6 @@ jobs:
               git -C "$DEPLOY_DIR" reset --hard "origin/$BRANCH"
             else
               git clone --branch "$BRANCH" "$REPO_SSH" "$DEPLOY_DIR"
-            fi
-
-            # ── Criar/atualizar .env a partir do .env.example ────────────────
-            # Usa printf para gravar script Python em arquivo temporario (sem
-            # heredoc nem string multi-linha no YAML, que quebram o parser).
-            ENV_FILE="$DEPLOY_DIR/infrastructure/.env"
-            EXAMPLE_FILE="$DEPLOY_DIR/infrastructure/.env.example"
-            if [ -f "$EXAMPLE_FILE" ]; then
-              cp "$EXAMPLE_FILE" "$ENV_FILE"
-              PYSC=$(mktemp /tmp/gen_env_XXXXXX.py)
-              printf 'import re, os\n'                                                                                                        > "$PYSC"
-              printf 'p = "%s"\n' "$ENV_FILE"                                                                                                >> "$PYSC"
-              printf 'c = open(p).read()\n'                                                                                                  >> "$PYSC"
-              printf 'keys = ["POSTGRES_USER","POSTGRES_PASSWORD","POSTGRES_DB","RABBITMQ_USER","RABBITMQ_PASSWORD","OPENAI_API_KEY","JWT_SECRET_KEY","ADMIN_USER","ADMIN_PASSWORD","MINIO_ACCESS_KEY","MINIO_SECRET_KEY","MINIO_BUCKET","GRAFANA_USER","GRAFANA_PASSWORD","ALLOWED_ORIGINS","IMAGE_TAG","TZ"]\n' >> "$PYSC"
-              printf 'for k in keys:\n'                                                                                                       >> "$PYSC"
-              printf '    v = os.environ.get(k, "")\n'                                                                                       >> "$PYSC"
-              printf '    if v:\n'                                                                                                            >> "$PYSC"
-              printf '        c = re.sub("^" + k + "=.*", k + "=" + v, c, flags=re.MULTILINE)\n'                                            >> "$PYSC"
-              printf 'u=os.environ.get("POSTGRES_USER","fiap"); pw=os.environ.get("POSTGRES_PASSWORD",""); db=os.environ.get("POSTGRES_DB","fiap")\n' >> "$PYSC"
-              printf 'c = re.sub("^DATABASE_URL=.*","DATABASE_URL=postgresql+asyncpg://"+u+":"+pw+"@postgres:5432/"+db,c,flags=re.MULTILINE)\n' >> "$PYSC"
-              printf 'open(p, "w").write(c)\n'                                                                                               >> "$PYSC"
-              python3 "$PYSC" && rm -f "$PYSC"
-              echo ".env gerado: $ENV_FILE"
-            else
-              echo "AVISO: $EXAMPLE_FILE nao encontrado — .env nao gerado"
             fi
 
             MANIFESTS_DIR="$DEPLOY_DIR/infrastructure/k8s"
