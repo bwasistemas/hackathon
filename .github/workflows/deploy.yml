@@ -213,34 +213,25 @@ jobs:
             fi
 
             # ── Criar/atualizar .env a partir do .env.example ────────────────
-            # Substitui valores com os GitHub Secrets via Python para lidar
-            # corretamente com senhas que contenham caracteres especiais.
+            # Usa printf para gravar script Python em arquivo temporario (sem
+            # heredoc nem string multi-linha no YAML, que quebram o parser).
             ENV_FILE="$DEPLOY_DIR/infrastructure/.env"
             EXAMPLE_FILE="$DEPLOY_DIR/infrastructure/.env.example"
             if [ -f "$EXAMPLE_FILE" ]; then
               cp "$EXAMPLE_FILE" "$ENV_FILE"
-              python3 -c "
-import re, os
-p = '${ENV_FILE}'
-c = open(p).read()
-for k in ['POSTGRES_USER','POSTGRES_PASSWORD','POSTGRES_DB',
-          'RABBITMQ_USER','RABBITMQ_PASSWORD',
-          'OPENAI_API_KEY','JWT_SECRET_KEY',
-          'ADMIN_USER','ADMIN_PASSWORD',
-          'MINIO_ACCESS_KEY','MINIO_SECRET_KEY','MINIO_BUCKET',
-          'GRAFANA_USER','GRAFANA_PASSWORD',
-          'ALLOWED_ORIGINS','IMAGE_TAG','TZ']:
-    v = os.environ.get(k, '')
-    if v:
-        c = re.sub('^' + k + '=.*', k + '=' + v, c, flags=re.MULTILINE)
-u  = os.environ.get('POSTGRES_USER', 'fiap')
-pw = os.environ.get('POSTGRES_PASSWORD', '')
-db = os.environ.get('POSTGRES_DB', 'fiap')
-c = re.sub('^DATABASE_URL=.*',
-           'DATABASE_URL=postgresql+asyncpg://' + u + ':' + pw + '@postgres:5432/' + db,
-           c, flags=re.MULTILINE)
-open(p, 'w').write(c)
-"
+              PYSC=$(mktemp /tmp/gen_env_XXXXXX.py)
+              printf 'import re, os\n'                                                                                                        > "$PYSC"
+              printf 'p = "%s"\n' "$ENV_FILE"                                                                                                >> "$PYSC"
+              printf 'c = open(p).read()\n'                                                                                                  >> "$PYSC"
+              printf 'keys = ["POSTGRES_USER","POSTGRES_PASSWORD","POSTGRES_DB","RABBITMQ_USER","RABBITMQ_PASSWORD","OPENAI_API_KEY","JWT_SECRET_KEY","ADMIN_USER","ADMIN_PASSWORD","MINIO_ACCESS_KEY","MINIO_SECRET_KEY","MINIO_BUCKET","GRAFANA_USER","GRAFANA_PASSWORD","ALLOWED_ORIGINS","IMAGE_TAG","TZ"]\n' >> "$PYSC"
+              printf 'for k in keys:\n'                                                                                                       >> "$PYSC"
+              printf '    v = os.environ.get(k, "")\n'                                                                                       >> "$PYSC"
+              printf '    if v:\n'                                                                                                            >> "$PYSC"
+              printf '        c = re.sub("^" + k + "=.*", k + "=" + v, c, flags=re.MULTILINE)\n'                                            >> "$PYSC"
+              printf 'u=os.environ.get("POSTGRES_USER","fiap"); pw=os.environ.get("POSTGRES_PASSWORD",""); db=os.environ.get("POSTGRES_DB","fiap")\n' >> "$PYSC"
+              printf 'c = re.sub("^DATABASE_URL=.*","DATABASE_URL=postgresql+asyncpg://"+u+":"+pw+"@postgres:5432/"+db,c,flags=re.MULTILINE)\n' >> "$PYSC"
+              printf 'open(p, "w").write(c)\n'                                                                                               >> "$PYSC"
+              python3 "$PYSC" && rm -f "$PYSC"
               echo ".env gerado: $ENV_FILE"
             else
               echo "AVISO: $EXAMPLE_FILE nao encontrado — .env nao gerado"
