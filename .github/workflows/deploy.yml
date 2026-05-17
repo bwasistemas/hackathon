@@ -367,10 +367,10 @@ jobs:
               echo "Aplicando namespace arch-geral (observabilidade compartilhada)..."
               kubectl create namespace arch-geral --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
-              # Remover Services de observabilidade das namespaces por-ambiente para liberar NodePorts
-              # (migracao unica: portas 30082-30085 eram por-env, agora sao fixas em arch-geral)
+              # Remover Deployments/DaemonSets de observabilidade por-ambiente (migracao para arch-geral).
+              # Services NAO sao deletados — grafana/prometheus/loki em arch-prod/hmg agora sao
+              # ExternalName gerenciados por 91-observability-refs.yaml.
               for ns in arch-prod arch-hmg; do
-                kubectl delete service prometheus grafana -n "$ns" --ignore-not-found 2>/dev/null || true
                 kubectl delete deployment prometheus grafana loki -n "$ns" --ignore-not-found 2>/dev/null || true
                 kubectl delete daemonset promtail -n "$ns" --ignore-not-found 2>/dev/null || true
                 kubectl delete serviceaccount promtail -n "$ns" --ignore-not-found 2>/dev/null || true
