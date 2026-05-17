@@ -43,18 +43,23 @@ Usam os workflows reutilizaveis (`reusable-*`).
 1. **Set deployment vars** — define por branch:
    - `namespace`: `arch-prod` (main) ou `arch-hmg` (hmg)
    - `domain`: dominio de producao ou homologacao
-   - NodePorts: frontend (30080/81), grafana (30082/83), prometheus (30084/85), rabbitmq-mgmt (30086/87)
-2. **Checkout** — obtem os manifests `infrastructure/k8s/` no runner
-3. **SCP** (`appleboy/scp-action`) — copia `infrastructure/k8s/` para `/tmp/arch-k8s-<namespace>/` na VPS
+   - NodePorts por ambiente: frontend (30080/81), rabbitmq-mgmt (30086/87)
+   - NodePorts fixos (compartilhados via arch-geral): grafana (30082), prometheus (30084)
+2. **Checkout** — obtem os manifests no runner
+3. **SCP x3** (`appleboy/scp-action`):
+   - `infrastructure/k8s/` → `/tmp/arch-k8s-<namespace>/` (manifests da aplicacao)
+   - `infrastructure/k8s-geral/` → `/tmp/arch-k8s-geral/` (observabilidade compartilhada)
+   - `.vps/nginx-archanalyzer.conf` → `/tmp/arch-nginx-update/` (config Nginx)
 4. **SSH** (`appleboy/ssh-action`) — na VPS:
    - Valida secrets obrigatorios
    - Exporta kubeconfig do cluster Kind (se necessario)
-   - Configura socat para cada NodePort (frontend, grafana, prometheus, rabbitmq-mgmt)
+   - Atualiza config Nginx se o template mudou
+   - Configura socat: frontend e rabbitmq-mgmt (por ambiente) + grafana:30082 e prometheus:30084 (fixos)
    - Instala KEDA se os CRDs nao existirem
    - Cria/atualiza namespace, pull secret GHCR, `arch-secrets`, `rabbitmq-keda-auth`
-   - Aplica manifests: `envsubst | kubectl apply` em ordem numerica
-   - Remove arquivos temporarios
-   - Aguarda rollout de todos os Deployments e StatefulSets
+   - Aplica manifests de `k8s/`: `envsubst | kubectl apply` em ordem numerica
+   - Aplica manifests de `k8s-geral/` (namespace arch-geral): cria `grafana-secrets`, apply Prometheus/Grafana/Loki/Promtail
+   - Aguarda rollout dos servicos criticos (app) e da observabilidade (arch-geral, nao critico)
    - Smoke test HTTP no frontend
    - Exibe status dos pods e logs de containers com erro
 

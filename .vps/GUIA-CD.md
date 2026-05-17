@@ -11,26 +11,30 @@ GitHub Actions (CI/CD)
 VPS                                                                 │
 ├─ Nginx (80/443) ← SSL Let's Encrypt                              │
 │   ├─ archanalyzer.brunoretiro.com.br/             → Kind NodePort 30080 (frontend prod)
-│   ├─ archanalyzer.brunoretiro.com.br/grafana/     → Kind NodePort 30082 (grafana prod)
-│   ├─ archanalyzer.brunoretiro.com.br/prometheus/  → Kind NodePort 30084 (prometheus prod)
+│   ├─ archanalyzer.brunoretiro.com.br/grafana/     → Kind NodePort 30082 (grafana compartilhado)
+│   ├─ archanalyzer.brunoretiro.com.br/prometheus/  → Kind NodePort 30084 (prometheus compartilhado)
 │   ├─ archanalyzer.brunoretiro.com.br/rabbitmq/    → Kind NodePort 30086 (rabbitmq-mgmt prod)
 │   ├─ archanalyzer.brunoretiro.com.br/portainer/  → Portainer Docker :9000
 │   ├─ archanalyzer.brunoretiro.com.br/k8s/        → Headlamp :30444
 │   │
 │   ├─ archanalyzerhmg.brunoretiro.com.br/          → Kind NodePort 30081 (frontend hmg)
-│   ├─ archanalyzerhmg.brunoretiro.com.br/grafana/  → Kind NodePort 30083 (grafana hmg)
-│   ├─ archanalyzerhmg.brunoretiro.com.br/prometheus/→ Kind NodePort 30085 (prometheus hmg)
+│   ├─ archanalyzerhmg.brunoretiro.com.br/grafana/  → Kind NodePort 30082 (grafana compartilhado)
+│   ├─ archanalyzerhmg.brunoretiro.com.br/prometheus/→ Kind NodePort 30084 (prometheus compartilhado)
 │   └─ archanalyzerhmg.brunoretiro.com.br/rabbitmq/ → Kind NodePort 30087 (rabbitmq-mgmt hmg)
 │
 ├─ Kind cluster (Kubernetes in Docker)
 │   ├─ Namespace arch-prod (producao — branch main)
-│   │   frontend:30080 · grafana:30082 · prometheus:30084 · rabbitmq-mgmt:30086
+│   │   frontend:30080 · rabbitmq-mgmt:30086
 │   │   upload:8001 · ai:8003 · report:8004
-│   │   postgres:5432 · rabbitmq:5672 · minio:9000 · loki:3100
+│   │   postgres:5432 · rabbitmq:5672 · minio:9000
 │   │
-│   └─ Namespace arch-hmg (homologacao — branch hmg)
-│       frontend:30081 · grafana:30083 · prometheus:30085 · rabbitmq-mgmt:30087
-│       mesmos servicos internos, totalmente isolados do prod
+│   ├─ Namespace arch-hmg (homologacao — branch hmg)
+│   │   frontend:30081 · rabbitmq-mgmt:30087
+│   │   mesmos servicos internos, totalmente isolados do prod
+│   │
+│   └─ Namespace arch-geral (observabilidade compartilhada)
+│       grafana:30082 · prometheus:30084 · loki:3100 (interno)
+│       Promtail coleta logs de arch-prod e arch-hmg
 │
 ├─ KEDA v2.14 — autoscaling do ai-service
 │   ScaledObject: min=1, max=MAX_REPLICAS, trigger=fila diagram.upload

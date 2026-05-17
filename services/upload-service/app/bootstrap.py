@@ -15,7 +15,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.adapters.inbound.http_routes import build_router
 from app.adapters.outbound.asyncpg_uploads import create_upload_repository
 from app.adapters.outbound.minio_storage import MinIOStorageAdapter
-from app.adapters.outbound.rabbitmq_publisher import RabbitMQPublisher, NullMessagePublisher, connect_rabbitmq
+from app.adapters.outbound.rabbitmq_publisher import RabbitMQPublisher, connect_rabbitmq
 from app.application.upload_file import UploadFileUseCase, ListUploadsUseCase, GetUploadUseCase
 from app.config import load_settings
 from app.logging_config import setup_logging
@@ -60,11 +60,7 @@ def create_app() -> FastAPI:
             settings.rabbitmq_password,
         )
         app.state.rabbit_connection = rabbit_connection
-        
-        if rabbit_connection:
-            publisher = RabbitMQPublisher(rabbit_connection)
-        else:
-            publisher = NullMessagePublisher()
+        publisher = RabbitMQPublisher(rabbit_connection)
 
         # Wire use cases with dependencies
         app.state.upload_use_case = UploadFileUseCase(

@@ -118,16 +118,12 @@ jobs:
             echo "namespace=arch-prod"                                                                     >> "$GITHUB_OUTPUT"
             echo "domain=${{ vars.DOMAIN_PROD || 'archanalyzer.brunoretiro.com.br' }}"                   >> "$GITHUB_OUTPUT"
             echo "frontend_nodeport=30080"                                                                >> "$GITHUB_OUTPUT"
-            echo "grafana_nodeport=30082"                                                                 >> "$GITHUB_OUTPUT"
-            echo "prometheus_nodeport=30084"                                                              >> "$GITHUB_OUTPUT"
             echo "rabbitmq_mgmt_nodeport=30086"                                                           >> "$GITHUB_OUTPUT"
             echo "allowed_origins=https://${{ vars.DOMAIN_PROD || 'archanalyzer.brunoretiro.com.br' }}" >> "$GITHUB_OUTPUT"
           else
             echo "namespace=arch-hmg"                                                                     >> "$GITHUB_OUTPUT"
             echo "domain=${{ vars.DOMAIN_HMG || 'archanalyzerhmg.brunoretiro.com.br' }}"                >> "$GITHUB_OUTPUT"
             echo "frontend_nodeport=30081"                                                                >> "$GITHUB_OUTPUT"
-            echo "grafana_nodeport=30083"                                                                 >> "$GITHUB_OUTPUT"
-            echo "prometheus_nodeport=30085"                                                              >> "$GITHUB_OUTPUT"
             echo "rabbitmq_mgmt_nodeport=30087"                                                           >> "$GITHUB_OUTPUT"
             echo "allowed_origins=https://${{ vars.DOMAIN_HMG || 'archanalyzerhmg.brunoretiro.com.br' }}" >> "$GITHUB_OUTPUT"
           fi
@@ -144,6 +140,17 @@ jobs:
           port: ${{ secrets.VPS_SSH_PORT || '22' }}
           source: "infrastructure/k8s"
           target: "/tmp/arch-k8s-${{ steps.vars.outputs.namespace }}"
+          rm: true
+
+      - name: Copiar manifests k8s-geral para VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          source: "infrastructure/k8s-geral"
+          target: "/tmp/arch-k8s-geral"
           rm: true
 
       - name: Copiar config Nginx para VPS
@@ -168,8 +175,6 @@ jobs:
           NAMESPACE:                  ${{ steps.vars.outputs.namespace }}
           DOMAIN:                     ${{ steps.vars.outputs.domain }}
           FRONTEND_NODEPORT:          ${{ steps.vars.outputs.frontend_nodeport }}
-          GRAFANA_NODEPORT:           ${{ steps.vars.outputs.grafana_nodeport }}
-          PROMETHEUS_NODEPORT:        ${{ steps.vars.outputs.prometheus_nodeport }}
           RABBITMQ_MGMT_NODEPORT:     ${{ steps.vars.outputs.rabbitmq_mgmt_nodeport }}
           ALLOWED_ORIGINS:            ${{ steps.vars.outputs.allowed_origins }}
           POSTGRES_DB:                ${{ vars.POSTGRES_DB || 'fiap' }}
@@ -196,7 +201,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_SSH_PORT || '22' }}
-          envs: GITHUB_TOKEN,GHCR_PAT,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,NAMESPACE,DOMAIN,DOMAIN_PROD,DOMAIN_HMG,FRONTEND_NODEPORT,GRAFANA_NODEPORT,PROMETHEUS_NODEPORT,RABBITMQ_MGMT_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
+          envs: GITHUB_TOKEN,GHCR_PAT,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,NAMESPACE,DOMAIN,DOMAIN_PROD,DOMAIN_HMG,FRONTEND_NODEPORT,RABBITMQ_MGMT_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
           script: |
             set -e
 
@@ -294,9 +299,10 @@ jobs:
               fi
             }
             setup_socat_port "$FRONTEND_NODEPORT"
-            setup_socat_port "$GRAFANA_NODEPORT"
-            setup_socat_port "$PROMETHEUS_NODEPORT"
             setup_socat_port "$RABBITMQ_MGMT_NODEPORT"
+            # Grafana e Prometheus sao compartilhados (arch-geral) — portas fixas
+            setup_socat_port 30082
+            setup_socat_port 30084
 
             # ── KEDA (instala se CRDs ausentes) ──────────────────────────────
             if ! kubectl get crd scaledobjects.keda.sh &>/dev/null 2>&1; then
@@ -347,13 +353,45 @@ jobs:
               --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
             # ── Aplicar manifests ─────────────────────────────────────────────
-            ENVSUBST_VARS='${IMAGE_PREFIX} ${IMAGE_TAG} ${NAMESPACE} ${DOMAIN} ${POSTGRES_DB} ${MINIO_BUCKET} ${TZ} ${ALLOWED_ORIGINS} ${FRONTEND_NODEPORT} ${GRAFANA_NODEPORT} ${PROMETHEUS_NODEPORT} ${RABBITMQ_MGMT_NODEPORT} ${MAX_REPLICAS} ${QUEUE_MESSAGES_PER_REPLICA}'
+            ENVSUBST_VARS='${IMAGE_PREFIX} ${IMAGE_TAG} ${NAMESPACE} ${DOMAIN} ${POSTGRES_DB} ${MINIO_BUCKET} ${TZ} ${ALLOWED_ORIGINS} ${FRONTEND_NODEPORT} ${RABBITMQ_MGMT_NODEPORT} ${MAX_REPLICAS} ${QUEUE_MESSAGES_PER_REPLICA}'
             for manifest in $(ls "$MANIFESTS_DIR"/*.yaml | sort); do
               echo "Aplicando: $(basename $manifest)..."
               envsubst "$ENVSUBST_VARS" < "$manifest" | kubectl apply --validate=false -n "$NAMESPACE" -f -
             done
 
             rm -rf "/tmp/arch-k8s-${NAMESPACE}"
+
+            # ── Deploy arch-geral (observabilidade compartilhada) ─────────────
+            GERAL_MANIFESTS_DIR="/tmp/arch-k8s-geral/infrastructure/k8s-geral"
+            if [ -d "$GERAL_MANIFESTS_DIR" ]; then
+              echo "Aplicando namespace arch-geral (observabilidade compartilhada)..."
+              kubectl create namespace arch-geral --dry-run=client -o yaml | kubectl apply --validate=false -f -
+
+              # Remover Deployments/DaemonSets de observabilidade por-ambiente (migracao para arch-geral).
+              # Services NAO sao deletados — grafana/prometheus/loki em arch-prod/hmg agora sao
+              # ExternalName gerenciados por 91-observability-refs.yaml.
+              for ns in arch-prod arch-hmg; do
+                kubectl delete deployment prometheus grafana loki -n "$ns" --ignore-not-found 2>/dev/null || true
+                kubectl delete daemonset promtail -n "$ns" --ignore-not-found 2>/dev/null || true
+                kubectl delete serviceaccount promtail -n "$ns" --ignore-not-found 2>/dev/null || true
+              done
+              kubectl delete clusterrole prometheus-arch-prod prometheus-arch-hmg --ignore-not-found 2>/dev/null || true
+              kubectl delete clusterrolebinding prometheus-arch-prod prometheus-arch-hmg --ignore-not-found 2>/dev/null || true
+
+              # Secret do Grafana no namespace arch-geral
+              kubectl create secret generic grafana-secrets \
+                --namespace=arch-geral \
+                --from-literal=GRAFANA_USER="$GRAFANA_USER" \
+                --from-literal=GRAFANA_PASSWORD="$GRAFANA_PASSWORD" \
+                --dry-run=client -o yaml | kubectl apply --validate=false -f -
+
+              GERAL_ENVSUBST_VARS='${DOMAIN_PROD} ${TZ}'
+              for manifest in $(ls "$GERAL_MANIFESTS_DIR"/*.yaml | sort); do
+                echo "Aplicando (geral): $(basename $manifest)..."
+                envsubst "$GERAL_ENVSUBST_VARS" < "$manifest" | kubectl apply --validate=false -f -
+              done
+              rm -rf /tmp/arch-k8s-geral
+            fi
 
             # ── Aguardar rollouts ─────────────────────────────────────────────
             ROLLOUT_FAILED=false
@@ -374,15 +412,15 @@ jobs:
               fi
             done
 
-            # Observabilidade — nao critica; falha e reportada mas nao para o deploy
+            # Observabilidade compartilhada (arch-geral) — nao critica
             for deploy in prometheus grafana loki; do
-              echo "Aguardando rollout de $deploy (observabilidade)..."
-              kubectl rollout status deployment/"$deploy" -n "$NAMESPACE" --timeout=120s || \
-                echo "AVISO: rollout de $deploy nao concluiu — observabilidade pode estar degradada."
+              echo "Aguardando rollout de $deploy (arch-geral)..."
+              kubectl rollout status deployment/"$deploy" -n arch-geral --timeout=120s || \
+                echo "AVISO: rollout de $deploy em arch-geral nao concluiu — observabilidade pode estar degradada."
             done
-            echo "Aguardando DaemonSet promtail (observabilidade)..."
-            kubectl rollout status daemonset/promtail -n "$NAMESPACE" --timeout=60s || \
-              echo "AVISO: promtail DaemonSet nao concluiu — coleta de logs pode estar degradada."
+            echo "Aguardando DaemonSet promtail (arch-geral)..."
+            kubectl rollout status daemonset/promtail -n arch-geral --timeout=120s || \
+              echo "AVISO: promtail DaemonSet em arch-geral nao concluiu — coleta de logs pode estar degradada."
 
             # ── Smoke test ────────────────────────────────────────────────────
             echo "Smoke test na porta $FRONTEND_NODEPORT..."
