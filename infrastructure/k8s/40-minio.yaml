@@ -23,7 +23,8 @@ spec:
     - name: console
       port: 9001
       targetPort: 9001
-  type: ClusterIP
+      nodePort: ${MINIO_CONSOLE_NODEPORT}
+  type: NodePort
 ---
 apiVersion: apps/v1
 kind: StatefulSet

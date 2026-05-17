@@ -119,12 +119,14 @@ jobs:
             echo "domain=${{ vars.DOMAIN_PROD || 'archanalyzer.brunoretiro.com.br' }}"                   >> "$GITHUB_OUTPUT"
             echo "frontend_nodeport=30080"                                                                >> "$GITHUB_OUTPUT"
             echo "rabbitmq_mgmt_nodeport=30086"                                                           >> "$GITHUB_OUTPUT"
+            echo "minio_console_nodeport=30083"                                                           >> "$GITHUB_OUTPUT"
             echo "allowed_origins=https://${{ vars.DOMAIN_PROD || 'archanalyzer.brunoretiro.com.br' }}" >> "$GITHUB_OUTPUT"
           else
             echo "namespace=arch-hmg"                                                                     >> "$GITHUB_OUTPUT"
             echo "domain=${{ vars.DOMAIN_HMG || 'archanalyzerhmg.brunoretiro.com.br' }}"                >> "$GITHUB_OUTPUT"
             echo "frontend_nodeport=30081"                                                                >> "$GITHUB_OUTPUT"
             echo "rabbitmq_mgmt_nodeport=30087"                                                           >> "$GITHUB_OUTPUT"
+            echo "minio_console_nodeport=30088"                                                           >> "$GITHUB_OUTPUT"
             echo "allowed_origins=https://${{ vars.DOMAIN_HMG || 'archanalyzerhmg.brunoretiro.com.br' }}" >> "$GITHUB_OUTPUT"
           fi
 
@@ -176,6 +178,7 @@ jobs:
           DOMAIN:                     ${{ steps.vars.outputs.domain }}
           FRONTEND_NODEPORT:          ${{ steps.vars.outputs.frontend_nodeport }}
           RABBITMQ_MGMT_NODEPORT:     ${{ steps.vars.outputs.rabbitmq_mgmt_nodeport }}
+          MINIO_CONSOLE_NODEPORT:     ${{ steps.vars.outputs.minio_console_nodeport }}
           ALLOWED_ORIGINS:            ${{ steps.vars.outputs.allowed_origins }}
           POSTGRES_DB:                ${{ vars.POSTGRES_DB || 'fiap' }}
           MINIO_BUCKET:               ${{ vars.MINIO_BUCKET || 'fiap' }}
@@ -201,7 +204,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_SSH_PORT || '22' }}
-          envs: GITHUB_TOKEN,GHCR_PAT,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,NAMESPACE,DOMAIN,DOMAIN_PROD,DOMAIN_HMG,FRONTEND_NODEPORT,RABBITMQ_MGMT_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
+          envs: GITHUB_TOKEN,GHCR_PAT,GITHUB_ACTOR,IMAGE_PREFIX,IMAGE_TAG,NAMESPACE,DOMAIN,DOMAIN_PROD,DOMAIN_HMG,FRONTEND_NODEPORT,RABBITMQ_MGMT_NODEPORT,MINIO_CONSOLE_NODEPORT,ALLOWED_ORIGINS,POSTGRES_DB,MINIO_BUCKET,TZ,MAX_REPLICAS,QUEUE_MESSAGES_PER_REPLICA,POSTGRES_USER,POSTGRES_PASSWORD,RABBITMQ_USER,RABBITMQ_PASSWORD,OPENAI_API_KEY,JWT_SECRET_KEY,ADMIN_USER,ADMIN_PASSWORD,MINIO_ACCESS_KEY,MINIO_SECRET_KEY,GRAFANA_USER,GRAFANA_PASSWORD
           script: |
             set -e
 
@@ -300,6 +303,7 @@ jobs:
             }
             setup_socat_port "$FRONTEND_NODEPORT"
             setup_socat_port "$RABBITMQ_MGMT_NODEPORT"
+            setup_socat_port "$MINIO_CONSOLE_NODEPORT"
             # Grafana e Prometheus sao compartilhados (arch-geral) — portas fixas
             setup_socat_port 30082
             setup_socat_port 30084
@@ -353,7 +357,7 @@ jobs:
               --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
             # ── Aplicar manifests ─────────────────────────────────────────────
-            ENVSUBST_VARS='${IMAGE_PREFIX} ${IMAGE_TAG} ${NAMESPACE} ${DOMAIN} ${POSTGRES_DB} ${MINIO_BUCKET} ${TZ} ${ALLOWED_ORIGINS} ${FRONTEND_NODEPORT} ${RABBITMQ_MGMT_NODEPORT} ${MAX_REPLICAS} ${QUEUE_MESSAGES_PER_REPLICA}'
+            ENVSUBST_VARS='${IMAGE_PREFIX} ${IMAGE_TAG} ${NAMESPACE} ${DOMAIN} ${POSTGRES_DB} ${MINIO_BUCKET} ${TZ} ${ALLOWED_ORIGINS} ${FRONTEND_NODEPORT} ${RABBITMQ_MGMT_NODEPORT} ${MINIO_CONSOLE_NODEPORT} ${MAX_REPLICAS} ${QUEUE_MESSAGES_PER_REPLICA}'
             for manifest in $(ls "$MANIFESTS_DIR"/*.yaml | sort); do
               echo "Aplicando: $(basename $manifest)..."
               envsubst "$ENVSUBST_VARS" < "$manifest" | kubectl apply --validate=false -n "$NAMESPACE" -f -
