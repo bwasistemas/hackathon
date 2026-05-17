@@ -940,6 +940,7 @@ window.submitFeedback = async (id) => {
 
 /** Paths HTTPS em produção — espelham .vps/nginx-archanalyzer.conf (location /grafana/, etc.). */
 const NGINX_EXTERNAL_PATHS = {
+    minio: '/minio/',
     rabbitmq: '/rabbitmq/',
     grafana: '/grafana/',
     prometheus: '/prometheus/',
@@ -964,6 +965,7 @@ function initStaticAdminPanelLinks() {
     const mapping = {
         'http://localhost:15672': NGINX_EXTERNAL_PATHS.rabbitmq,
         'http://localhost:3000': NGINX_EXTERNAL_PATHS.grafana,
+        'http://localhost:9001': NGINX_EXTERNAL_PATHS.minio,
     };
     const panel = document.getElementById('view-services');
     if (!panel) return;
