@@ -229,7 +229,7 @@ jobs:
               exit 1
             fi
 
-            MANIFESTS_DIR="/tmp/arch-k8s-${NAMESPACE}/k8s"
+            MANIFESTS_DIR="/tmp/arch-k8s-${NAMESPACE}/infrastructure/k8s"
 
             # Garantir que envsubst está disponível
             command -v envsubst &>/dev/null || apt-get install -y gettext-base
