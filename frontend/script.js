@@ -938,6 +938,44 @@ window.submitFeedback = async (id) => {
 
 // ---------- Services Status ----------
 
+/** Paths HTTPS em produção — espelham .vps/nginx-archanalyzer.conf (location /grafana/, etc.). */
+const NGINX_EXTERNAL_PATHS = {
+    rabbitmq: '/rabbitmq/',
+    grafana: '/grafana/',
+    prometheus: '/prometheus/',
+    grafanaLokiDashboard: '/grafana/d/arch-logs',
+};
+
+function isLocalEnvironment() {
+    const host = window.location.hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+}
+
+/** Local: localhost + porta; VPS/prod: mesmo host com path do Nginx reverso. */
+function resolveExternalUrl(localUrl, nginxPath) {
+    if (isLocalEnvironment()) {
+        return localUrl;
+    }
+    return new URL(nginxPath, window.location.origin).href;
+}
+
+/** Atualiza links fixos em index.html (#view-services) que têm rota no nginx-archanalyzer.conf. */
+function initStaticAdminPanelLinks() {
+    const mapping = {
+        'http://localhost:15672': NGINX_EXTERNAL_PATHS.rabbitmq,
+        'http://localhost:3000': NGINX_EXTERNAL_PATHS.grafana,
+    };
+    const panel = document.getElementById('view-services');
+    if (!panel) return;
+    panel.querySelectorAll('a[href]').forEach((anchor) => {
+        const localHref = anchor.getAttribute('href');
+        const nginxPath = mapping[localHref];
+        if (nginxPath) {
+            anchor.href = resolveExternalUrl(localHref, nginxPath);
+        }
+    });
+}
+
 const servicesCategories = [
     {
         title: 'Microsserviços',
@@ -957,7 +995,7 @@ const servicesCategories = [
                 desc: 'Broker de mensageria para a fila assíncrona de uploads.',
                 port: 15672,
                 healthPath: '/infra-health/rabbitmq',
-                externalUrl: 'http://localhost:15672',
+                externalUrl: resolveExternalUrl('http://localhost:15672', NGINX_EXTERNAL_PATHS.rabbitmq),
             },
             {
                 name: 'PostgreSQL',
@@ -977,7 +1015,7 @@ const servicesCategories = [
                 desc: 'Dashboard de monitoramento com métricas (Prometheus) e logs estruturados (Loki).',
                 port: 3000,
                 healthPath: '/infra-health/grafana',
-                externalUrl: 'http://localhost:3000',
+                externalUrl: resolveExternalUrl('http://localhost:3000', NGINX_EXTERNAL_PATHS.grafana),
                 color: '#F46800',
                 imgUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/grafana/grafana-original.svg',
             },
@@ -986,7 +1024,7 @@ const servicesCategories = [
                 desc: 'Motor de coleta e processamento de métricas em tempo real.',
                 port: 9090,
                 healthPath: '/infra-health/prometheus',
-                externalUrl: 'http://localhost:9090',
+                externalUrl: resolveExternalUrl('http://localhost:9090', NGINX_EXTERNAL_PATHS.prometheus),
                 color: '#E6522C',
                 imgUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/prometheus/prometheus-original.svg',
             },
@@ -995,7 +1033,7 @@ const servicesCategories = [
                 desc: 'Agregador de logs estruturados dos microsserviços (JSON). Acessível via Grafana.',
                 port: 3100,
                 healthPath: '/infra-health/loki',
-                externalUrl: 'http://localhost:3000/d/arch-logs',
+                externalUrl: resolveExternalUrl('http://localhost:3000/d/arch-logs', NGINX_EXTERNAL_PATHS.grafanaLokiDashboard),
                 color: '#F46800',
                 imgUrl: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/grafana/grafana-original.svg',
             },
@@ -1068,3 +1106,5 @@ async function loadServices() {
     lucide.createIcons();
 }
 window.loadServices = loadServices;
+
+initStaticAdminPanelLinks();
