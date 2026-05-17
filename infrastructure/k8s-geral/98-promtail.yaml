@@ -97,8 +97,7 @@ spec:
               mountPath: /var/log/containers
               readOnly: true
           readinessProbe:
-            httpGet:
-              path: /ready
+            tcpSocket:
               port: 9080
             initialDelaySeconds: 10
             periodSeconds: 10
