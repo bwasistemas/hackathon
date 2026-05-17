@@ -2,6 +2,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: prometheus-data
+  namespace: arch-geral
 spec:
   accessModes:
     - ReadWriteOnce
@@ -13,6 +14,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: prometheus-config
+  namespace: arch-geral
 data:
   prometheus.yml: |
     global:
@@ -20,7 +22,7 @@ data:
       evaluation_interval: 15s
       external_labels:
         cluster: 'arch-analyzer'
-        environment: '${NAMESPACE}'
+        environment: 'shared'
 
     alerting:
       alertmanagers: []
@@ -33,36 +35,14 @@ data:
           - targets: ['localhost:9090']
         metrics_path: /metrics
 
-      - job_name: 'upload-service'
-        static_configs:
-          - targets: ['upload-service:8001']
-        metrics_path: /metrics
-        scrape_interval: 10s
-
-      - job_name: 'ai-service'
-        static_configs:
-          - targets: ['ai-service:8003']
-        metrics_path: /metrics
-        scrape_interval: 10s
-
-      - job_name: 'report-service'
-        static_configs:
-          - targets: ['report-service:8004']
-        metrics_path: /metrics
-        scrape_interval: 10s
-
-      - job_name: 'rabbitmq'
-        static_configs:
-          - targets: ['rabbitmq:15692']
-        metrics_path: /metrics
-        scrape_interval: 30s
-
+      # Pods anotados com prometheus.io/scrape=true em ambos namespaces
       - job_name: 'kubernetes-pods'
         kubernetes_sd_configs:
           - role: pod
             namespaces:
               names:
-                - '${NAMESPACE}'
+                - arch-prod
+                - arch-hmg
         relabel_configs:
           - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
             action: keep
@@ -76,11 +56,99 @@ data:
             regex: ([^:]+)(?::\d+)?;(\d+)
             replacement: $$1:$$2
             target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+
+      # Servicos de producao (coleta garantida sem dependencia de anotacao)
+      - job_name: 'arch-prod-services'
+        static_configs:
+          - targets:
+              - upload-service.arch-prod.svc.cluster.local:8001
+              - ai-service.arch-prod.svc.cluster.local:8003
+              - report-service.arch-prod.svc.cluster.local:8004
+            labels:
+              namespace: arch-prod
+        metrics_path: /metrics
+        scrape_interval: 10s
+
+      - job_name: 'arch-prod-rabbitmq'
+        static_configs:
+          - targets:
+              - rabbitmq.arch-prod.svc.cluster.local:15692
+            labels:
+              namespace: arch-prod
+        metrics_path: /metrics
+        scrape_interval: 30s
+
+      # Servicos de homologacao
+      - job_name: 'arch-hmg-services'
+        static_configs:
+          - targets:
+              - upload-service.arch-hmg.svc.cluster.local:8001
+              - ai-service.arch-hmg.svc.cluster.local:8003
+              - report-service.arch-hmg.svc.cluster.local:8004
+            labels:
+              namespace: arch-hmg
+        metrics_path: /metrics
+        scrape_interval: 10s
+
+      - job_name: 'arch-hmg-rabbitmq'
+        static_configs:
+          - targets:
+              - rabbitmq.arch-hmg.svc.cluster.local:15692
+            labels:
+              namespace: arch-hmg
+        metrics_path: /metrics
+        scrape_interval: 30s
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: arch-geral
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-arch-geral
+rules:
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/proxy
+      - services
+      - endpoints
+      - pods
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources:
+      - configmaps
+    verbs: ["get"]
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-arch-geral
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-arch-geral
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: arch-geral
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: prometheus
+  namespace: arch-geral
 spec:
   selector:
     app: prometheus
@@ -89,12 +157,13 @@ spec:
     - name: http
       port: 9090
       targetPort: 9090
-      nodePort: ${PROMETHEUS_NODEPORT}
+      nodePort: 30084
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: prometheus
+  namespace: arch-geral
 spec:
   replicas: 1
   selector:
@@ -114,7 +183,7 @@ spec:
             - "--storage.tsdb.path=/prometheus"
             - "--web.enable-lifecycle"
             - "--storage.tsdb.retention.time=15d"
-            - "--web.external-url=https://${DOMAIN}/prometheus/"
+            - "--web.external-url=https://${DOMAIN_PROD}/prometheus/"
             - "--web.route-prefix=/"
           ports:
             - containerPort: 9090
@@ -160,42 +229,3 @@ spec:
           hostPath:
             path: /etc/localtime
             type: FileOrCreate
----
-# ServiceAccount and ClusterRole for Prometheus kubernetes_sd_configs
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: prometheus
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: prometheus-${NAMESPACE}
-rules:
-  - apiGroups: [""]
-    resources:
-      - nodes
-      - nodes/proxy
-      - services
-      - endpoints
-      - pods
-    verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources:
-      - configmaps
-    verbs: ["get"]
-  - nonResourceURLs: ["/metrics"]
-    verbs: ["get"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: prometheus-${NAMESPACE}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: prometheus-${NAMESPACE}
-subjects:
-  - kind: ServiceAccount
-    name: prometheus
-    namespace: ${NAMESPACE}

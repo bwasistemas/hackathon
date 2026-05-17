@@ -149,12 +149,12 @@ Rotas configuradas:
 | `/` (prod) | frontend prod | NodePort 30080 |
 | `/portainer/` (prod) | Portainer Docker | 9000 |
 | `/k8s/` (prod) | Headlamp | NodePort 30444 |
-| `/grafana/` (prod) | Grafana prod | NodePort 30082 |
-| `/prometheus/` (prod) | Prometheus prod | NodePort 30084 (rewrite de prefixo) |
+| `/grafana/` (prod) | Grafana compartilhado (arch-geral) | NodePort 30082 |
+| `/prometheus/` (prod) | Prometheus compartilhado (arch-geral) | NodePort 30084 (rewrite de prefixo) |
 | `/rabbitmq/` (prod) | RabbitMQ management prod | NodePort 30086 |
 | `/` (hmg) | frontend hmg | NodePort 30081 |
-| `/grafana/` (hmg) | Grafana hmg | NodePort 30083 |
-| `/prometheus/` (hmg) | Prometheus hmg | NodePort 30085 (rewrite de prefixo) |
+| `/grafana/` (hmg) | Grafana compartilhado (arch-geral) | NodePort 30082 |
+| `/prometheus/` (hmg) | Prometheus compartilhado (arch-geral) | NodePort 30084 (rewrite de prefixo) |
 | `/rabbitmq/` (hmg) | RabbitMQ management hmg | NodePort 30087 |
 
 ---

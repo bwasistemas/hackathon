@@ -23,8 +23,6 @@ deploy.yml
 | `POSTGRES_DB`, `MINIO_BUCKET`, `TZ` | GitHub Variables |
 | `ALLOWED_ORIGINS` | derivado do DOMAIN |
 | `FRONTEND_NODEPORT` | 30080 (prod) / 30081 (hmg) |
-| `GRAFANA_NODEPORT` | 30082 (prod) / 30083 (hmg) |
-| `PROMETHEUS_NODEPORT` | 30084 (prod) / 30085 (hmg) |
 | `RABBITMQ_MGMT_NODEPORT` | 30086 (prod) / 30087 (hmg) |
 | `MAX_REPLICAS`, `QUEUE_MESSAGES_PER_REPLICA` | GitHub Variables |
 
@@ -134,59 +132,6 @@ minimo 1, maximo `${MAX_REPLICAS}`, cooldown de 60s.
 
 ---
 
-### `95-prometheus.yaml`
-
-| Recurso | Tipo | Descricao |
-|---|---|---|
-| `prometheus-data` | PVC 5Gi | Retencao de 15 dias de metricas |
-| `prometheus-config` | ConfigMap | `prometheus.yml` com scrape_configs para todos os servicos e kubernetes_sd_configs para pods com annotation `prometheus.io/scrape: "true"` |
-| `prometheus` | Service NodePort `${PROMETHEUS_NODEPORT}` | Expoe para o Nginx em `/prometheus/` |
-| `prometheus` | Deployment | Coleta e armazena metricas |
-| `prometheus` | ServiceAccount + ClusterRole + ClusterRoleBinding | Permissoes para `kubernetes_sd_configs` listar pods/endpoints do namespace `${NAMESPACE}` |
-
-O Nginx faz rewrite de prefixo: `rewrite ^/prometheus/(.*) /$1 break`.
-
----
-
-### `96-grafana.yaml`
-
-| Recurso | Tipo | Descricao |
-|---|---|---|
-| `grafana-data` | PVC 5Gi | Dashboards, usuarios e configuracoes persistentes |
-| `grafana-datasources` | ConfigMap | Provisiona automaticamente Prometheus e Loki como datasources |
-| `grafana` | Service NodePort `${GRAFANA_NODEPORT}` | Expoe para o Nginx em `/grafana/` |
-| `grafana` | Deployment | Interface de dashboards |
-
-Subpath gerenciado pelo proprio Grafana via `GF_SERVER_SERVE_FROM_SUB_PATH=true` e
-`GF_SERVER_ROOT_URL=https://${DOMAIN}/grafana/`.
-
----
-
-### `97-loki.yaml`
-
-| Recurso | Tipo | Descricao |
-|---|---|---|
-| `loki-data` | PVC 5Gi | Armazenamento de logs |
-| `loki-config` | ConfigMap | Configuracao do Loki (storage local no filesystem) |
-| `loki` | Service ClusterIP:3100 | Acesso apenas interno (Grafana datasource) |
-| `loki` | Deployment | Agregador e indexador de logs |
-
-Nao expoe NodePort — acesso exclusivamente via datasource do Grafana em `/grafana/`.
-
----
-
-### `98-promtail.yaml`
-
-| Recurso | Tipo | Descricao |
-|---|---|---|
-| `promtail-config` | ConfigMap | Configuracao do Promtail: scrape de `/var/log/pods/${NAMESPACE}_*/*/*.log` com pipeline CRI e envio para Loki |
-| `promtail` | ServiceAccount | Identidade do DaemonSet (sem ClusterRole necessario — acesso apenas ao filesystem do host) |
-| `promtail` | DaemonSet | Agente de coleta de logs rodando em cada no; monta `/var/log/pods` e `/var/log/containers` do host |
-
-A variavel `${NAMESPACE}` no `__path__` e substituida pelo `envsubst`, garantindo que cada ambiente (prod/hmg) colete apenas seus proprios logs mesmo compartilhando o cluster.
-
----
-
 ## Ordem de dependencias
 
 ```
@@ -201,19 +146,17 @@ A variavel `${NAMESPACE}` no `__path__` e substituida pelo `envsubst`, garantind
     ├─ 70-report-service  → le do banco + escreve no minio
     ├─ 80-frontend        → proxy para os servicos acima
     │
-    ├─ 90-keda            (requer KEDA no cluster + rabbitmq rodando)
-    │
-    ├─ 95-prometheus      → raspa metricas de todos os servicos e pods
-    ├─ 96-grafana         → datasources: prometheus (95) + loki (97)
-    ├─ 97-loki            → recebe logs enviados pelo promtail (98)
-    └─ 98-promtail        → coleta logs dos pods e envia para loki (97)
+    └─ 90-keda            (requer KEDA no cluster + rabbitmq rodando)
 ```
+
+> Observabilidade (Prometheus, Grafana, Loki, Promtail) roda no namespace
+> compartilhado **arch-geral** — veja `infrastructure/k8s-geral/`.
 
 ## NodePorts por ambiente
 
 | Servico | Producao (arch-prod) | Homologacao (arch-hmg) |
 |---|---|---|
 | frontend | 30080 | 30081 |
-| grafana | 30082 | 30083 |
-| prometheus | 30084 | 30085 |
 | rabbitmq-management | 30086 | 30087 |
+
+Grafana (30082) e Prometheus (30084) sao compartilhados via namespace arch-geral.
