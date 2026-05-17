@@ -1,44 +1,30 @@
 # Arch Analyzer
 
-Sistema de análise automatizada de diagramas de arquitetura de software para hackathon acadêmico.
+MVP para análise automatizada de diagramas de arquitetura de software (imagens ou PDF), com microsserviços, mensageria, persistência, observabilidade e pipeline de IA integrado ao fluxo real de upload.
 
-## Segurança
+**Repositório:** [github.com/bwasistemas/hackathon](https://github.com/bwasistemas/hackathon)
 
-### Autenticação e Autorização
-- **JWT Authentication**: Sistema de autenticação baseado em tokens JWT com expiração de 30 minutos
-- **Rate Limiting**: Controle de taxa de requisições (5/min para uploads, 10/min para relatórios, 10/min para análise IA)
-- **Security Headers**: Headers OWASP recomendados (X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, HSTS, CSP)
+---
 
-### Monitoramento de Segurança
-- **Logging Estruturado**: Logs rotativos para eventos de segurança e aplicação
-- **Auditoria**: Rastreamento de tentativas de autenticação, uploads e acessos suspeitos
-- **Frontend Security**: Logger de segurança no cliente para monitoramento de atividades
+## Contexto e objetivo
 
-### Configurações de Segurança
-- **CORS Restrito**: Apenas origens específicas permitidas
-- **Input Validation**: Validação rigorosa de dados com Pydantic
-- **Environment Variables**: Credenciais sensíveis armazenadas em variáveis de ambiente
+O desafio do hackathon integrado (IA para Devs + Software Architecture) propõe um MVP capaz de:
 
-### Verificação de Segurança
-Execute o script de validação de segurança antes do deploy:
+1. Receber diagramas de arquitetura (imagem ou PDF).
+2. Processar o diagrama de forma assíncrona.
+3. Aplicar IA para análise automática.
+4. Gerar um relatório técnico estruturado.
+5. Permitir consulta do status e do resultado pelo usuário.
 
-```bash
-./scripts/security-check.sh
-```
+O **Arch Analyzer** executa esse ciclo com arquitetura distribuída: upload, fila RabbitMQ, processamento no AI Service, persistência em PostgreSQL/MinIO e consulta via Report Service.
 
-Este script verifica:
-- Configuração do JWT_SECRET_KEY
-- Headers CORS apropriados
-- Diretório de logs
-- Configurações SSL do banco de dados
-- Segurança MinIO e RabbitMQ
-- Headers de segurança habilitados
-- Rate limiting configurado
-- Sintaxe Python dos serviços
+Documentação complementar em [`doc/`](doc/README.md).
+
+---
 
 ## Arquitetura
 
-``` text
+```text
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │   Frontend      │────▶│  Upload Service  │────▶│    RabbitMQ     │
 │  (Nginx/SPA)    │     │   (FastAPI)      │     │   (Message Q)   │
@@ -66,7 +52,7 @@ Observabilidade (logs + métricas):
 ┌──────────────┐   scrape   ┌──────────────┐   datasource  ┌──────────────┐
 │  Prometheus  │──────────▶│    Grafana    │◀─────────────│     Loki     │
 │   :9090      │            │    :3000      │               │    :3100     │
-└──────────────┘            └──────────────┘               └──────┲───────┘
+└──────────────┘            └──────────────┘               └──────╲───────┘
                                                                    ║ push logs
                                                             ┌──────╚───────┐
                                                             │   Promtail   │
@@ -74,312 +60,396 @@ Observabilidade (logs + métricas):
                                                             └──────────────┘
 ```
 
+| Componente | Responsabilidade |
+|------------|------------------|
+| **Frontend** | SPA estática (Nginx): upload, acompanhamento de status, relatórios e feedback. Login JWT via proxy na mesma origem. |
+| **Upload Service** | Recebe arquivo, valida tamanho/tipo, grava no MinIO, persiste metadados e publica evento no RabbitMQ. |
+| **RabbitMQ** | Desacopla upload do processamento de IA. |
+| **AI Service** | Consome a fila, valida MIME/extensão/tamanho, extrai conteúdo visual (LLM OCR), executa swarm de agentes LLM e persiste a análise. |
+| **Report Service** | Consulta relatórios, anexo original, estatísticas e feedback — sem reprocessar imagens. |
+| **PostgreSQL** | Uploads, status, payload de análise e avaliações. |
+| **MinIO** | Object storage (S3-compatible) dos arquivos enviados. |
+| **Prometheus / Grafana / Loki / Promtail** | Métricas HTTP, dashboards e logs estruturados dos containers. |
+
+Cada serviço FastAPI segue **arquitetura hexagonal** (domínio, aplicação, portas e adaptadores). Detalhes do AI Service: [`doc/ai-service.md`](doc/ai-service.md).
+
+---
+
+## Fluxo principal
+
+1. O usuário envia PNG, JPG, JPEG ou PDF pelo frontend.
+2. O **Upload Service** aplica limite de **10 MB**, salva no MinIO e cria registro no PostgreSQL com status `RECEIVED`.
+3. O Upload Service publica evento no RabbitMQ (`upload_id`, `filename`, `file_path`, `content_type`).
+4. O **AI Service** consome a mensagem, marca `PROCESSING` e baixa o arquivo do MinIO.
+5. O AI Service valida extensão, tamanho (até **50 MB** no processamento) e MIME; executa extração visual/OCR e análise com LLM.
+6. O resultado é normalizado em JSON (`components`, `risks`, `summary`) e gravado no PostgreSQL com status `DONE`.
+7. O **Report Service** e o frontend exibem o relatório, anexo e feedback.
+
+Estados persistidos no código: `RECEIVED`, `PROCESSING`, `DONE`. Falhas de validação e integração são tratadas por exceções HTTP ou payload de erro na análise.
+
+---
+
+## Estrutura do projeto
+
+```
+hackathon/
+├── frontend/                 # SPA + Nginx (proxy para APIs)
+├── services/
+│   ├── upload-service/       # Upload, MinIO, fila, emissão JWT
+│   ├── ai-service/           # RabbitMQ consumer, OCR/LLM, persistência
+│   └── report-service/       # Leitura de relatórios e feedback
+├── infrastructure/
+│   ├── docker-compose.yml    # Stack local completo
+│   ├── docker-compose.prod.yml
+│   ├── k8s/                  # Manifests Kubernetes (deploy na VPS)
+│   ├── prometheus/ grafana/ loki/ promtail/ rabbitmq/
+│   └── .env.example
+├── .github/workflows/          # Testes e deploy (GitHub Actions)
+├── .vps/                       # Scripts de setup inicial da VPS
+├── doc/                        # Documentação técnica em português
+├── scripts/
+│   └── security-check.sh     # Validação de configurações de segurança
+├── setup.sh                  # Sobe o ambiente local (Linux/macOS)
+├── wsl-setup.sh              # Equivalente ao setup.sh para WSL
+└── README.md
+```
+
+---
+
 ## Quick Start
 
 ### 1. Clone e configure
 
 ```bash
-git clone <repository-url>
-cd Hachaton
+git clone https://github.com/bwasistemas/hackathon.git
+cd hackathon
 
-# Copie o arquivo de exemplo de variáveis de ambiente
 cp infrastructure/.env.example infrastructure/.env
-
-# Edite o .env com suas credenciais
-nano infrastructure/.env
+# Edite infrastructure/.env (JWT, LLM, credenciais)
 ```
 
-### 2. Suba todos os serviços
+Gere um `JWT_SECRET_KEY` seguro (obrigatório):
 
 ```bash
-# Opção 1: Script automático (recomendado)
+# Ou python3
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+### 2. Suba os serviços
+
+```bash
+# Opção recomendada
 chmod +x setup.sh && ./setup.sh
 
-# Opção 2: Docker Compose direto
-cd infrastructure && docker-compose up -d
-
-# Opção 3: Build manual + up
-cd infrastructure
-docker-compose build
-docker-compose up -d
+# Ou manualmente
+cd infrastructure && docker compose up -d
 ```
 
-### 3. Acesse os serviços
+Comandos do `setup.sh`: `start` (padrão), `stop`, `restart`, `logs`, `status`, `build`, `clean`, `help`.
 
-| Serviço | URL | Credenciais |
-|---------|-----|-------------|
-| **Frontend** | http://localhost:8051 | - |
-| **Upload API** | http://localhost:8001/docs | - |
-| **AI API** | http://localhost:8003/docs | - |
-| **Report API** | http://localhost:8004/docs | - |
-| **RabbitMQ** | http://localhost:15672 | fiap / fiap |
-| **PostgreSQL** | localhost:5432 | fiap / fiap |
-| **MinIO Console** | http://localhost:9001 | fiap / fiap1234 |
-| **MinIO API** | http://localhost:9000 | fiap / fiap1234 |
-| **Prometheus** | http://localhost:9090 | - |
-| **Grafana** | http://localhost:3000 | fiap / fiap |
-| **Loki** | http://localhost:3100 | - (interno) |
+### 3. Execução no WSL
 
-## Estrutura do Projeto
+Se você for rodar o app no **WSL** (Windows Subsystem for Linux), use o script [`wsl-setup.sh`](wsl-setup.sh) em vez do `setup.sh`. Ele executa os mesmos passos (verificação do Docker, criação do `.env`, build e `docker compose up`), mas resolve os caminhos com `ROOT_DIR` absoluto — evitando falhas ao trocar de diretório durante o build no WSL.
 
+```bash
+chmod +x wsl-setup.sh
+./wsl-setup.sh          # inicia todos os serviços (padrão)
+./wsl-setup.sh stop     # para os serviços
+./wsl-setup.sh help     # lista todos os comandos
 ```
-Hachaton/
-├── frontend/                    # Interface Single Page App (Nginx)
-│   ├── index.html              # Entry point central de comandos
-│   ├── styles.css              # Estilos UI modernos
-│   ├── script.js               # Lógica Vanilla JS
-│   ├── nginx.conf              # Config do Web Server
-│   └── Dockerfile
-│
-├── infrastructure/             # Docker & Observabilidade
-│   ├── docker-compose.yml      # Orquestração de serviços
-│   ├── dockerfiles/            # Dockerfiles dos microsserviços
-│   ├── prometheus/             # Configuração Prometheus
-│   ├── loki/                   # Configuração Grafana Loki (log storage)
-│   ├── promtail/               # Configuração Promtail (log collector)
-│   ├── grafana/                # Dashboards + Provisioning (métricas + logs)
-│   ├── .github/workflows/       # CI/CD
-│   ├── .env.example
-│   └── README.md
-│
-├── services/                   # Código das APIs
-│   ├── upload-service/         # Recebe e valida arquivos
-│   ├── ai-service/             # Multi-task worker: Consome RabbitMQ, OCR(PDF/Img) e aciona LLM
-│   └── report-service/         # Serve análises persistidas no Postgres
-│
-├── setup.sh                    # Script de setup rápido
-├── README.md                   # Este arquivo
-├── Setup.md                    # Especificação da infraestrutura
-└── Frontend.md                 # Especificação do frontend
-```
+
+### 4. Acesse os serviços
+
+| Serviço | URL | Credenciais (dev) |
+|---------|-----|-------------------|
+| **Frontend** | http://localhost:8051 | Login: `ADMIN_USER` / `ADMIN_PASSWORD` do `.env` |
+| **Upload API** | http://localhost:8001/docs | JWT após login |
+| **AI API** | http://localhost:8003/docs | JWT |
+| **Report API** | http://localhost:8004/docs | JWT |
+| **RabbitMQ** | http://localhost:15672 | `RABBITMQ_USER` / `RABBITMQ_PASSWORD` |
+| **PostgreSQL** | localhost:5432 | `POSTGRES_USER` / `POSTGRES_PASSWORD` |
+| **MinIO Console** | http://localhost:9001 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` |
+| **MinIO API** | http://localhost:9000 | idem |
+| **Prometheus** | http://localhost:9090 | — |
+| **Grafana** | http://localhost:3000 | `GRAFANA_USER` / `GRAFANA_PASSWORD` |
+| **Loki** | http://localhost:3100 | interno |
+
+---
 
 ## Configuração
 
-### Variáveis de Ambiente
-
-Edite `infrastructure/.env`:
+Principais variáveis em `infrastructure/.env` (ver [`infrastructure/.env.example`](infrastructure/.env.example)):
 
 ```env
-# Database
+# Banco e fila
 POSTGRES_USER=fiap
-POSTGRES_PASSWORD=fiap
-
-# RabbitMQ
+POSTGRES_PASSWORD=<senha-forte>
 RABBITMQ_USER=fiap
-RABBITMQ_PASSWORD=fiap
+RABBITMQ_PASSWORD=<senha-forte>
 
-# AI/LLM
-OPENAI_API_KEY=sua_chave_do_openrouter_ou_openai
+# LLM (OpenAI-compatible / OpenRouter)
+OPENAI_API_KEY=sk-...
 OPENAI_BASE_URL=https://openrouter.ai/api/v1
-LLM_MODEL=deepseek/deepseek-chat
+LLM_MODEL=deepseek/deepseek-v3.2
+LLM_OCR=google/gemma-4-26b-a4b-it
+
+# Autenticação (compartilhado entre os três serviços)
+JWT_SECRET_KEY=<minimo-48-chars-aleatorios>
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
+ADMIN_USER=fiap
+ADMIN_PASSWORD=<senha-forte>
+ALLOWED_ORIGINS=http://localhost:8051
+
+# MinIO
+MINIO_ACCESS_KEY=fiap
+MINIO_SECRET_KEY=<senha-forte>
+MINIO_BUCKET=fiap
 
 # Grafana
 GRAFANA_USER=fiap
-GRAFANA_PASSWORD=fiap
+GRAFANA_PASSWORD=<senha-forte>
 
-# MinIO (Object Storage)
-MINIO_ROOT_USER=fiap
-MINIO_ROOT_PASSWORD=fiap1234
+# Logs
+LOG_LEVEL=INFO
 ```
+
+---
+
+## Segurança
+
+### Autenticação e autorização
+
+- **JWT**: o Upload Service emite tokens (`POST /upload-service/token` via proxy do frontend); AI e Report Service validam o mesmo `JWT_SECRET_KEY`.
+- **Rate limiting** nos serviços FastAPI (SlowAPI).
+- **Headers de segurança** e **CORS** restrito (`ALLOWED_ORIGINS`).
+
+### Validação de entrada
+
+- Upload: limite de **10 MB** e tipos permitidos no Upload Service.
+- Processamento: validação de extensão, **50 MB**, MIME real (`python-magic`) no AI Service.
+- Resposta da IA: JSON com schema Pydantic (`components`, `risks`, `summary`); mascaramento de dados sensíveis antes da análise subsequente.
+
+### Verificação antes do deploy
+
+```bash
+./scripts/security-check.sh
+```
+
+O script valida `JWT_SECRET_KEY`, CORS, diretório de logs, configurações de banco/MinIO/RabbitMQ e sintaxe Python dos serviços.
 
 ## Funcionalidades
 
-### Upload de Diagramas
-- Suporte a PNG, JPG, JPEG, PDF
-- Limite de 10MB por arquivo
-- Pré-visualização antes do envio
-- Armazenamento de arquivos no MinIO
+### Upload
 
-### Processamento (AI Service Unificado)
+- Formatos: PNG, JPG, JPEG, PDF (e outros validados no AI Service: BMP, GIF, WEBP).
+- Armazenamento no MinIO; metadados e status no PostgreSQL.
+
+### Processamento (AI Service)
+
 - Consumo assíncrono via RabbitMQ (`aio-pika`).
-- OCR avançado com Tesseract e suporte nativo a PDFs via `pdf2image` e `poppler-utils`.
-- Extração de insights arquiteturais via IA (Estrutura JSON Restritiva via Pydantic).
+- Extração visual com `LlmOCRAdapter`; fallback Tesseract quando configurado.
+- Swarm de agentes (Strands) para arquitetura, infraestrutura e desenvolvimento; consolidação em JSON.
 
-### Dashboard
-- Status em tempo real
-- Métricas de análises
-- Filtros por status
-- Auto-refresh
+### Relatórios e dashboard
 
-### Relatórios
-- Componentes identificados
-- Riscos arquiteturais
-- Recomendações
-- Exportação JSON/Markdown
+- Componentes, riscos, recomendações e resumo.
+- Listagem por status, anexo original, estatísticas.
+- Feedback com avaliação 1–5 estrelas.
 
-### Feedback
-- Sistema de avaliação 1-5 estrelas
-- Comentários opcionais
+---
 
 ## Observabilidade
 
-O stack de observabilidade cobre três pilares: **métricas**, **logs** e **visualização**.
-
 ### Métricas — Prometheus + Grafana
-- Todos os serviços FastAPI expõem `/metrics` via `prometheus-fastapi-instrumentator`
-- Prometheus faz scraping automático de todos os containers
-- Dashboard "Arch Analyzer - Overview" provisionado automaticamente no Grafana com request rate, latência p95 e status por serviço
 
-### Logs — Grafana Loki + Promtail
-- **Todos os serviços emitem logs em formato JSON estruturado** via `python-json-logger`
-- Cada linha de log contém: `timestamp`, `level`, `service`, `name` (logger), `message`
-- **Promtail** coleta os logs diretamente dos containers Docker via socket (`/var/run/docker.sock`) e adiciona as labels `service`, `container` e `level`
-- **Loki** indexa e armazena os logs, permitindo consultas por serviço, nível e período
-- Dashboard **"Arch Analyzer - Logs"** provisionado automaticamente no Grafana com:
-  - Volume de logs por nível ao longo do tempo
-  - Contadores de erros e warnings no período
-  - Stream de logs em tempo real com filtro por serviço
-  - Painel exclusivo de erros
+- Endpoints `/metrics` nos serviços FastAPI (`prometheus-fastapi-instrumentator`).
+- Dashboards provisionados: **Arch Analyzer - Overview** e **Arch Analyzer - Logs**.
 
-#### Acessar logs no Grafana
-1. Acesse http://localhost:3000 (fiap / fiap)
-2. Menu lateral → Dashboards → **Arch Analyzer - Logs**
-3. Use o filtro **Serviço** para isolar um microsserviço específico
+### Logs — Loki + Promtail
 
-#### Variável de ambiente para log level
-```env
-LOG_LEVEL=INFO   # DEBUG | INFO | WARNING | ERROR
+- Logs JSON estruturados (`timestamp`, `level`, `service`, `name`, `message`).
+- Promtail coleta via socket Docker (`/var/run/docker.sock`).
+
+Acesse o Grafana em http://localhost:3000 → Dashboards → **Arch Analyzer - Logs**.
+
+---
+
+## Testes automatizados (pipelines)
+
+Os testes de regressão rodam no **GitHub Actions** com **Python 3.12** e `pytest -q`. Cada microsserviço tem um workflow reutilizável (`reusable-*-tests.yml`) chamado por:
+
+| Workflow | Gatilho | O que executa |
+|----------|---------|---------------|
+| `upload-service-test.yml` | PR para `main` / manual | `reusable-upload-service-tests.yml` |
+| `ai-service-tests.yml` | PR para `main` / manual | `reusable-ai-service-tests.yml` |
+| `report-service-tests.yml` | PR para `main` / manual | `reusable-report-service-tests.yml` |
+| `deploy.yml` | push em `main` ou `hmg` | Os três testes acima **antes** do build e deploy |
+
+Cada job instala `requirements.txt` + `requirements-dev.txt` do serviço e executa apenas testes **unitários** (sem chamadas reais a APIs pagas de LLM).
+
+### Escopo por serviço
+
+| Serviço | Diretório de testes | Exemplos cobertos |
+|---------|---------------------|-------------------|
+| **upload-service** | `services/upload-service/tests/` | Caso de uso de upload (`test_upload_file.py`), adaptador PostgreSQL |
+| **ai-service** | `services/ai-service/tests/unit/` | Adaptadores LLM, OCR, parser JSON e swarm multiagente (mocks) |
+| **report-service** | `services/report-service/tests/` | Adaptador asyncpg de relatórios e estatísticas |
+
+O `pytest.ini` do AI Service restringe `testpaths` a `tests/unit`, de modo que a pasta `tests/ragas_eval/` **não** entra no `pytest` da pipeline.
+
+### Executar localmente (mesmo comando da CI)
+
+```bash
+# upload-service
+cd services/upload-service
+pip install -r requirements.txt -r requirements-dev.txt
+pytest -q
+
+# ai-service
+cd services/ai-service
+pip install -r requirements.txt -r requirements-dev.txt
+pytest -q
+
+# report-service
+cd services/report-service
+pip install -r requirements.txt -r requirements-dev.txt
+pytest -q
 ```
 
-### Grafana — Datasources provisionados automaticamente
-| Datasource | UID | Uso |
-|---|---|---|
-| Prometheus | `prometheus` | Métricas |
-| Loki | `loki` | Logs estruturados |
+Detalhes dos workflows: [`.github/workflows/README.md`](.github/workflows/README.md).
+
+---
+
+## Avaliação RAGAS (local)
+
+Além dos testes unitários, o **AI Service** inclui uma avaliação comportamental com [Ragas](https://docs.ragas.io) em [`services/ai-service/tests/ragas_eval/`](services/ai-service/tests/ragas_eval/). Ela exercita o fluxo real do `SwarmLlmAdapter` contra amostras de OCR curadas e aplica critérios em linguagem natural (`AspectCritic`), por exemplo:
+
+| Métrica | O que verifica |
+|---------|----------------|
+| `brazilian_portuguese` | Resposta em português brasileiro |
+| `grounded_in_input` | Componentes alinhados ao texto OCR (sem alucinação) |
+| `risks_and_mitigations` | Pelo menos 3 riscos com mitigação/recomendação |
+| `components_match_topology` | Lista de componentes reflete a topologia do diagrama |
+
+### Por que não roda na nuvem (CI/CD)
+
+Essa avaliação **não** faz parte das pipelines do GitHub Actions. Cada execução dispara chamadas reais ao provedor LLM (swarm + juiz Ragas), o que gera **custo por análise** e tempo de execução elevado — inviável para rodar a cada PR ou deploy. Por isso ela permanece como script manual para uso local ou em avaliações pontuais da equipe.
+
+### Como rodar localmente
+
+Dependências separadas em `requirements-eval.txt` (não instaladas na CI):
+
+```bash
+cd services/ai-service
+pip install -r requirements-eval.txt
+```
+
+O script carrega automaticamente o `.env` na raiz do repositório (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `LLM_MODEL`, `LLM_OCR`, etc.).
+
+```bash
+# a partir de services/ai-service — todas as amostras
+python tests/ragas_eval/evals.py
+
+# uma amostra específica
+python tests/ragas_eval/evals.py --sample ecommerce_microservices
+
+# sem gravar CSV
+python tests/ragas_eval/evals.py --no-save
+```
+
+Saída: tabela de scores no terminal, média por métrica e relatório CSV em `tests/ragas_eval/results/eval_<timestamp>.csv` (salvo com `--no-save`).
+
+Documentação completa da suíte: [`services/ai-service/tests/ragas_eval/README.md`](services/ai-service/tests/ragas_eval/README.md).
+
+---
 
 ## CI/CD
 
-Pipeline GitHub Actions configurado:
-1. Lint (ruff, black)
-2. Testes unitários
-3. Build de imagens Docker
-4. Push para ghcr.io
-5. Deploy automático (develop)
+Workflows em [`.github/workflows/`](.github/workflows/README.md):
 
-## Desenvolvimento Local
+| Workflow | Gatilho | Função |
+|----------|---------|--------|
+| `upload-service-test.yml`, `ai-service-tests.yml`, `report-service-tests.yml` | PR para `main` | `pytest` unitário por serviço |
+| `deploy.yml` | push em `main` ou `hmg` | Testes → build/push GHCR → deploy Kubernetes na VPS |
+| `setup-vps.yml` | manual | Setup inicial da VPS (Kind, Nginx, SSL) |
 
-### Sem Docker (usando servidor estático leve, ex: Python)
+Manifests Kubernetes: [`infrastructure/k8s/`](infrastructure/k8s/README.md). Scripts de primeira instalação da VPS: [`.vps/README.md`](.vps/README.md).
+
+---
+
+## Desenvolvimento local
+
+### Sem Docker (apenas APIs)
 
 ```bash
-# Backend
 cd services/upload-service
 pip install -r requirements.txt
-uvicorn app.main:app --reload
-
-# Frontend
-cd frontend
-python -m http.server 8051
-# Acesse http://localhost:8051
+uvicorn app.main:app --reload --port 8001
 ```
 
-### Com Docker
+O frontend em Docker usa proxy Nginx; sem Compose, as rotas `/upload-service`, `/ai-service` e `/report-service` não estarão disponíveis.
+
+### Frontend estático isolado
 
 ```bash
-# Build individual
-docker build -t arch-analyzer-upload ./infrastructure/dockerfiles/Dockerfile.upload
-
-# Run
-docker run -p 8001:8001 arch-analyzer-upload
+cd frontend
+python -m http.server 8051
 ```
+
+---
 
 ## Troubleshooting
 
 ### Serviços não sobem
+
 ```bash
-docker-compose logs <servico>
-docker-compose ps
+cd infrastructure
+docker compose logs <servico>
+docker compose ps
 ```
 
 ### Erro de conexão com banco
-Verifique se o PostgreSQL está saudável:
+
 ```bash
-docker-compose ps postgres
-docker-compose logs postgres
+docker compose ps postgres
+docker compose logs postgres
 ```
 
-### RabbitMQ não conecta
+### RabbitMQ / MinIO
+
 ```bash
-docker-compose logs rabbitmq
-# Verifique credenciais no .env
+docker compose logs rabbitmq
+docker compose logs minio
 ```
 
-### MinIO não conecta
-```bash
-docker-compose logs minio
-# Verifique as credenciais no .env
-# Console: http://localhost:9001
-```
+### Frontend não alcança as APIs
 
-## MinIO (Object Storage)
+Confirme que o stack Compose está na mesma rede e verifique `docker compose logs frontend`.
 
-### Listar arquivos
+---
+
+## MinIO (referência rápida)
+
 ```bash
-# Via mc (minio client)
+# Listar objetos no bucket
 docker exec arch-analyzer-minio mc ls local/fiap/
 
-# Via curl
-curl -s http://localhost:9000/fiap/ -u fiap:fiap1234
+# Download via curl
+curl -O http://localhost:9000/fiap/arquivo.png -u username:password
 ```
 
-### Baixar arquivo
-```bash
-# Via curl (salva no diretório atual)
-curl -O http://localhost:9000/fiap/arquivo.png -u fiap:fiap1234
+Bucket padrão: `fiap` (configurável via `MINIO_BUCKET`).
 
-# Via docker cp
-docker cp arch-analyzer-minio:/tmp/arquivo.png ./arquivo.png
+---
 
-# Via mc
-docker exec arch-analyzer-minio mc cp local/fiap/arquivo.png /tmp/
-docker cp arch-analyzer-minio:/tmp/arquivo.png ./arquivo.png
-```
+## Limitações e evoluções
 
-### Upload de arquivo
-```bash
-# Via curl
-curl -X PUT http://localhost:9000/fiap/arquivo.png \
-  -u fiap:fiap1234 \
-  -T ./arquivo.png
+- Qualidade da análise depende da resolução e clareza do diagrama.
+- Estados `RECEIVED` / `PROCESSING` / `DONE` cobrem o fluxo feliz; padronizar `ERROR` no banco é evolução recomendada.
+- Endurecer TLS, rotação de segredos e políticas de rede para ambiente real.
 
-# Via mc
-docker exec -i arch-analyzer-minio mc cp ./arquivo.png local/fiap/
-```
-
-**Credenciais:** `fiap` / `fiap1234`
-**Bucket padrão:** `fiap`
-
-### Frontend não conecta no backend
-```bash
-# Verifique o Nginx config e a integridade da conexão via Docker logs
-docker-compose logs frontend
-# O frontend agora roteia as chamadas para o backend internamente via Nginx.
-```
-
-## Segurança
-
-- Mude todas as senhas padrão em produção!
-- Não commite o arquivo `.env`
-- Use credenciais diferentes para produção
-- Porta 5432 (PostgreSQL) não deve ser exposta
+---
 
 ## Licença
 
-MIT - Hackathon FIAP 2026
-
-## Como funciona o fluxo completo
-
-### 1. Upload Service (Porta 8001)
-É a esteira de entrada. Quando você seleciona um PDF/imagem e clica em Enviar:
-- Faz o upload do arquivo direto para o **MinIO** (Object Storage S3-compatible)
-- Registra no PostgreSQL: `status = RECEIVED` e salva a URL do MinIO (`minio_url`)
-- Publica uma mensagem no **RabbitMQ** avisando que tem diagrama novo para processar
-
-### 2. AI Service (Porta 8003)
-O cérebro da operação. Fica em background consumindo a fila do RabbitMQ:
-- Ao receber uma mensagem, **baixa o arquivo direto do MinIO** via `minio_url`
-- Roda OCR com Poppler + Tesseract (multithreading) para extrair o texto do PDF/imagem
-- Envia o conteúdo para a LLM (DeepSeek via OpenRouter) pedindo análise de componentes e riscos
-- Persiste o resultado em JSON no PostgreSQL e atualiza o status para `DONE`
-
-### 3. Report Service (Porta 8004)
-O garçom. Não processa IA nem acessa o MinIO. Apenas consulta o PostgreSQL e devolve as análises prontas em JSON para o Frontend exibir no Dashboard.
+MIT — Hackathon FIAP 2026
