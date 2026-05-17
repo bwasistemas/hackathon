@@ -419,7 +419,7 @@ jobs:
                 echo "AVISO: rollout de $deploy em arch-geral nao concluiu — observabilidade pode estar degradada."
             done
             echo "Aguardando DaemonSet promtail (arch-geral)..."
-            kubectl rollout status daemonset/promtail -n arch-geral --timeout=60s || \
+            kubectl rollout status daemonset/promtail -n arch-geral --timeout=120s || \
               echo "AVISO: promtail DaemonSet em arch-geral nao concluiu — coleta de logs pode estar degradada."
 
             # ── Smoke test ────────────────────────────────────────────────────
