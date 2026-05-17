@@ -131,6 +131,21 @@ update_system() {
         ca-certificates gnupg lsb-release openssl \
         certbot python3-certbot-nginx
     ok "Sistema atualizado (socat incluso)"
+
+    # Aumentar limites inotify — Promtail abre um watcher por arquivo de log.
+    # O padrao do kernel (8192 watches) e insuficiente para clusters Kind com
+    # multiplos pods, causando "too many open files" no Promtail.
+    SYSCTL_CONF="/etc/sysctl.d/99-kind-inotify.conf"
+    if ! grep -q "max_user_watches" "$SYSCTL_CONF" 2>/dev/null; then
+        cat > "$SYSCTL_CONF" << 'EOF'
+fs.inotify.max_user_watches=524288
+fs.inotify.max_user_instances=512
+EOF
+        sysctl -p "$SYSCTL_CONF" --quiet 2>/dev/null || true
+        ok "inotify limits configurados (max_user_watches=524288)"
+    else
+        ok "inotify limits ja configurados"
+    fi
 }
 
 ################################################################################
