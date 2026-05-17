@@ -43,14 +43,12 @@ async def connect_rabbitmq(
     port: int,
     login: str,
     password: str,
-) -> Optional[aio_pika.RobustConnection]:
-    try:
-        return await aio_pika.connect_robust(
-            host=host,
-            port=port,
-            login=login,
-            password=password,
-        )
-    except Exception as e:
-        logger.exception("RabbitMQ connection failed")
-        return None
+) -> aio_pika.RobustConnection:
+    connection = await aio_pika.connect_robust(
+        host=host,
+        port=port,
+        login=login,
+        password=password,
+    )
+    logger.info("Connected to RabbitMQ at %s:%s", host, port)
+    return connection

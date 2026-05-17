@@ -89,15 +89,13 @@ def create_app() -> FastAPI:
             settings.rabbitmq_password.get_secret_value(),
         )
         app.state.rabbit_connection = rabbit
-        if rabbit:
-            await start_diagram_upload_consumer(rabbit, process_upload)
+        await start_diagram_upload_consumer(rabbit, process_upload)
 
         yield
 
         if db_pool:
             await db_pool.close()
-        if rabbit:
-            await rabbit.close()
+        await rabbit.close()
 
     app = FastAPI(
         title="AI Service",
