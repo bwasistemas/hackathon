@@ -11,8 +11,8 @@ GitHub Actions (CI/CD)
 VPS                                                                 │
 ├─ Nginx (80/443) ← SSL Let's Encrypt                              │
 │   ├─ archanalyzer.brunoretiro.com.br/             → Kind NodePort 30080 (frontend prod)
-│   ├─ archanalyzer.brunoretiro.com.br/grafana/     → Kind NodePort 30082 (grafana prod)
-│   ├─ archanalyzer.brunoretiro.com.br/prometheus/  → Kind NodePort 30084 (prometheus prod)
+│   ├─ archanalyzer.brunoretiro.com.br/grafana/     → Kind NodePort 30082 (grafana compartilhado)
+│   ├─ archanalyzer.brunoretiro.com.br/prometheus/  → Kind NodePort 30084 (prometheus compartilhado)
 │   ├─ archanalyzer.brunoretiro.com.br/rabbitmq/    → Kind NodePort 30086 (rabbitmq-mgmt prod)
 │   ├─ archanalyzer.brunoretiro.com.br/portainer/  → Portainer Docker :9000
 │   ├─ archanalyzer.brunoretiro.com.br/k8s/        → Headlamp :30444
