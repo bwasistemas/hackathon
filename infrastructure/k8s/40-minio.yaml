@@ -64,6 +64,9 @@ spec:
                 secretKeyRef:
                   name: arch-secrets
                   key: MINIO_SECRET_KEY
+            # Console React SPA behind Nginx /minio/ — ver .vps/nginx-archanalyzer.conf
+            - name: MINIO_BROWSER_REDIRECT_URL
+              value: "https://${DOMAIN}/minio"
             - name: TZ
               valueFrom:
                 configMapKeyRef:
