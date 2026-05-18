@@ -35,7 +35,7 @@ data:
               container:
           - template:
               source: service
-              template: '{{ .container }}'
+              template: '{{ .container }}-{{ .namespace }}'
           - labels:
               service:
           - regex:
@@ -60,7 +60,7 @@ data:
               container:
           - template:
               source: service
-              template: '{{ .container }}'
+              template: '{{ .container }}-{{ .namespace }}'
           - labels:
               service:
           - regex:
