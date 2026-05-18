@@ -29,10 +29,19 @@ data:
         pipeline_stages:
           - cri: {}
           - regex:
-              expression: '^/var/log/pods/[^/]+/(?P<container>[^/]+)/\d+\.log$$'
+              expression: '^/var/log/pods/[^/]+/(?P<container>[^/]+)/\d+\.log$'
               source: filename
           - labels:
               container:
+          - template:
+              source: service
+              template: '{{ .container }}'
+          - labels:
+              service:
+          - regex:
+              expression: '.* - (?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL) - .*'
+          - labels:
+              level:
 
       - job_name: arch-hmg-pods
         static_configs:
@@ -45,10 +54,19 @@ data:
         pipeline_stages:
           - cri: {}
           - regex:
-              expression: '^/var/log/pods/[^/]+/(?P<container>[^/]+)/\d+\.log$$'
+              expression: '^/var/log/pods/[^/]+/(?P<container>[^/]+)/\d+\.log$'
               source: filename
           - labels:
               container:
+          - template:
+              source: service
+              template: '{{ .container }}'
+          - labels:
+              service:
+          - regex:
+              expression: '.* - (?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL) - .*'
+          - labels:
+              level:
 ---
 apiVersion: v1
 kind: ServiceAccount
