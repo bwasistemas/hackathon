@@ -54,7 +54,7 @@ data:
           - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
             action: replace
             regex: ([^:]+)(?::\d+)?;(\d+)
-            replacement: $$1:$$2
+            replacement: $1:$2
             target_label: __address__
           - source_labels: [__meta_kubernetes_namespace]
             target_label: namespace
@@ -63,45 +63,43 @@ data:
           - source_labels: [__meta_kubernetes_pod_label_app]
             target_label: app
 
-      # Servicos de producao (coleta garantida sem dependencia de anotacao)
-      - job_name: 'arch-prod-services'
+      # upload-service (prod + hmg) — job name bate com dashboard
+      - job_name: 'upload-service'
         static_configs:
-          - targets:
-              - upload-service.arch-prod.svc.cluster.local:8001
-              - ai-service.arch-prod.svc.cluster.local:8003
-              - report-service.arch-prod.svc.cluster.local:8004
-            labels:
-              namespace: arch-prod
+          - targets: ['upload-service.arch-prod.svc.cluster.local:8001']
+            labels: {namespace: arch-prod}
+          - targets: ['upload-service.arch-hmg.svc.cluster.local:8001']
+            labels: {namespace: arch-hmg}
         metrics_path: /metrics
         scrape_interval: 10s
 
-      - job_name: 'arch-prod-rabbitmq'
+      # ai-service (prod + hmg)
+      - job_name: 'ai-service'
         static_configs:
-          - targets:
-              - rabbitmq.arch-prod.svc.cluster.local:15692
-            labels:
-              namespace: arch-prod
-        metrics_path: /metrics
-        scrape_interval: 30s
-
-      # Servicos de homologacao
-      - job_name: 'arch-hmg-services'
-        static_configs:
-          - targets:
-              - upload-service.arch-hmg.svc.cluster.local:8001
-              - ai-service.arch-hmg.svc.cluster.local:8003
-              - report-service.arch-hmg.svc.cluster.local:8004
-            labels:
-              namespace: arch-hmg
+          - targets: ['ai-service.arch-prod.svc.cluster.local:8003']
+            labels: {namespace: arch-prod}
+          - targets: ['ai-service.arch-hmg.svc.cluster.local:8003']
+            labels: {namespace: arch-hmg}
         metrics_path: /metrics
         scrape_interval: 10s
 
-      - job_name: 'arch-hmg-rabbitmq'
+      # report-service (prod + hmg)
+      - job_name: 'report-service'
         static_configs:
-          - targets:
-              - rabbitmq.arch-hmg.svc.cluster.local:15692
-            labels:
-              namespace: arch-hmg
+          - targets: ['report-service.arch-prod.svc.cluster.local:8004']
+            labels: {namespace: arch-prod}
+          - targets: ['report-service.arch-hmg.svc.cluster.local:8004']
+            labels: {namespace: arch-hmg}
+        metrics_path: /metrics
+        scrape_interval: 10s
+
+      # rabbitmq (prod + hmg)
+      - job_name: 'rabbitmq'
+        static_configs:
+          - targets: ['rabbitmq.arch-prod.svc.cluster.local:15692']
+            labels: {namespace: arch-prod}
+          - targets: ['rabbitmq.arch-hmg.svc.cluster.local:15692']
+            labels: {namespace: arch-hmg}
         metrics_path: /metrics
         scrape_interval: 30s
 ---
