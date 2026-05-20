@@ -24,10 +24,29 @@ services:
     networks:
       - arch-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fiap} -d arch_uploads"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fiap}"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  postgres-setup:
+    image: postgres:16-alpine
+    container_name: arch-analyzer-postgres-setup
+    environment:
+      <<: *tz
+      PGPASSWORD: ${POSTGRES_PASSWORD:-fiap}
+    networks:
+      - arch-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    command: >
+      sh -c "
+        createdb -h postgres -U ${POSTGRES_USER:-fiap} arch_uploads 2>/dev/null || true &&
+        createdb -h postgres -U ${POSTGRES_USER:-fiap} arch_reports 2>/dev/null || true &&
+        echo postgres-setup: databases ready.
+      "
 
   postgres-exporter:
     # Docker Hub (prometheuscommunity/postgres-exporter); evite quay + tags inexistentes (ex.: v0.15.1)
@@ -124,8 +143,8 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8051}
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-setup:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       minio:
@@ -214,8 +233,8 @@ services:
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8051}
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-setup:
+        condition: service_completed_successfully
       minio:
         condition: service_healthy
     volumes:

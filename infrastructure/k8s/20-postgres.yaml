@@ -91,7 +91,7 @@ spec:
               command:
                 - sh
                 - -c
-                - pg_isready -U $(POSTGRES_USER) -d arch_uploads
+                - pg_isready -U $(POSTGRES_USER)
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
@@ -101,7 +101,7 @@ spec:
               command:
                 - sh
                 - -c
-                - pg_isready -U $(POSTGRES_USER) -d arch_uploads
+                - pg_isready -U $(POSTGRES_USER)
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5

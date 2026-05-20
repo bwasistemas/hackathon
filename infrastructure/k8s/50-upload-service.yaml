@@ -32,6 +32,27 @@ spec:
     spec:
       imagePullSecrets:
         - name: ghcr-pull-secret
+      initContainers:
+        - name: create-db
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres -U "$POSTGRES_USER"; do sleep 2; done
+              createdb -h postgres -U "$POSTGRES_USER" arch_uploads 2>/dev/null || true
+              echo "create-db: arch_uploads ready."
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: arch-secrets
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: arch-secrets
+                  key: POSTGRES_PASSWORD
       containers:
         - name: upload-service
           image: ${IMAGE_PREFIX}/upload-service:${IMAGE_TAG}
