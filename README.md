@@ -82,7 +82,15 @@ Observabilidade:
 | **MinIO** | Object storage S3-compatible dos arquivos enviados. |
 | **Prometheus / Grafana / Loki / Promtail** | Métricas HTTP, dashboards e logs estruturados dos containers. |
 
-Cada serviço FastAPI segue **arquitetura hexagonal** (domínio, aplicação, portas e adaptadores). Detalhes do AI Service: [`doc/ai-service.md`](doc/ai-service.md). Diagramas C4: [`doc/c4-arch-analyzer.dsl`](doc/c4-arch-analyzer.dsl).
+Cada serviço FastAPI segue **arquitetura hexagonal** (domínio, aplicação, portas e adaptadores).
+
+| Documento técnico | Conteúdo |
+| --- | --- |
+| [`doc/upload-service.md`](doc/upload-service.md) | Casos de uso, adaptadores asyncpg/MinIO/RabbitMQ, consumidor AMQP e ciclo de status |
+| [`doc/ai-service.md`](doc/ai-service.md) | OCR multimodal, swarm Strands/DeepSeek, portas e adaptadores |
+| [`doc/report-service.md`](doc/report-service.md) | HttpUploadClientAdapter (s2s JWT), feedback, estatísticas e bootstrap |
+| [`doc/aplicacao.md`](doc/aplicacao.md) | Visão geral: fluxos, portas, filas, bancos e configuração |
+| [`doc/c4-arch-analyzer-clean.dsl`](doc/c4-arch-analyzer-clean.dsl) | Diagrama C4 (Structurizr DSL): contexto, containers, fluxos e deploy |
 
 ---
 
