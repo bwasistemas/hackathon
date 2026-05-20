@@ -400,6 +400,12 @@ jobs:
             # ── Aguardar rollouts ─────────────────────────────────────────────
             ROLLOUT_FAILED=false
 
+            # Garantir que o pod postgres recrie com a spec atualizada.
+            # Um pod em CrashLoopBackOff trava o rolling update do StatefulSet:
+            # o pod nunca fica Ready, bloqueando a troca de revisao.
+            echo "Recriando pod postgres-0 para garantir spec atualizada..."
+            kubectl delete pod postgres-0 -n "$NAMESPACE" --ignore-not-found
+
             # Servicos criticos — falha aqui para o deploy
             for deploy in upload-service ai-service report-service frontend; do
               echo "Aguardando rollout de $deploy..."
