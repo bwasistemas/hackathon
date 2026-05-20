@@ -89,9 +89,11 @@ spec:
           readinessProbe:
             exec:
               command:
-                - sh
-                - -c
-                - pg_isready -U $(POSTGRES_USER)
+                - pg_isready
+                - -h
+                - 127.0.0.1
+                - -p
+                - "5432"
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
@@ -99,9 +101,11 @@ spec:
           livenessProbe:
             exec:
               command:
-                - sh
-                - -c
-                - pg_isready -U $(POSTGRES_USER)
+                - pg_isready
+                - -h
+                - 127.0.0.1
+                - -p
+                - "5432"
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5
