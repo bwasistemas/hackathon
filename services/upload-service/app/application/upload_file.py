@@ -1,10 +1,14 @@
 """Use case: upload file to storage and publish event."""
+import json
+import logging
 import uuid
 from typing import Optional
 
 from app.application.ports import StoragePort, UploadRepositoryPort, MessagePublisherPort
 from app.domain.exceptions import FileTooLargeError, StorageError, MessageQueueError
 from app.domain.models import UploadResult, Upload
+
+logger = logging.getLogger(__name__)
 
 
 class UploadFileUseCase:
@@ -97,10 +101,43 @@ class ListUploadsUseCase:
 
 class GetUploadUseCase:
     """Use case: get upload details by ID."""
-    
+
     def __init__(self, repository: UploadRepositoryPort) -> None:
         self._repository = repository
-    
+
     async def execute(self, upload_id: str) -> Optional[Upload]:
         """Get upload by ID."""
         return await self._repository.get_upload(upload_id)
+
+
+class UpdateUploadResultUseCase:
+    """Use case: update upload status and payload from diagram.result queue message."""
+
+    def __init__(self, repository: UploadRepositoryPort) -> None:
+        self._repository = repository
+
+    async def execute(
+        self,
+        upload_id: str,
+        status: str,
+        payload_json: Optional[str] = None,
+        error_message: Optional[str] = None,
+    ) -> None:
+        if status == "PROCESSING":
+            await self._repository.mark_processing(upload_id)
+        elif status == "DONE" and payload_json is not None:
+            await self._repository.mark_done_with_payload(upload_id, payload_json)
+        elif status == "ERROR":
+            await self._repository.mark_failed(upload_id, error_message or "Unknown error")
+        else:
+            logger.warning("Unhandled diagram.result status=%s for upload_id=%s", status, upload_id)
+
+
+class GetUploadStatsUseCase:
+    """Use case: return aggregate upload counts for the stats endpoint."""
+
+    def __init__(self, repository: UploadRepositoryPort) -> None:
+        self._repository = repository
+
+    async def execute(self) -> dict:
+        return await self._repository.get_upload_stats()

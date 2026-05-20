@@ -13,10 +13,17 @@ from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.adapters.inbound.http_routes import build_router
+from app.adapters.inbound.rabbitmq_result_consumer import start_diagram_result_consumer
 from app.adapters.outbound.asyncpg_uploads import create_upload_repository
 from app.adapters.outbound.minio_storage import MinIOStorageAdapter
 from app.adapters.outbound.rabbitmq_publisher import RabbitMQPublisher, connect_rabbitmq
-from app.application.upload_file import UploadFileUseCase, ListUploadsUseCase, GetUploadUseCase
+from app.application.upload_file import (
+    UploadFileUseCase,
+    ListUploadsUseCase,
+    GetUploadUseCase,
+    UpdateUploadResultUseCase,
+    GetUploadStatsUseCase,
+)
 from app.config import load_settings
 from app.logging_config import setup_logging
 
@@ -74,6 +81,11 @@ def create_app() -> FastAPI:
         app.state.get_upload_use_case = GetUploadUseCase(
             repository=upload_repo,
         )
+        update_result_use_case = UpdateUploadResultUseCase(repository=upload_repo)
+        app.state.update_result_use_case = update_result_use_case
+        app.state.get_upload_stats_use_case = GetUploadStatsUseCase(repository=upload_repo)
+
+        await start_diagram_result_consumer(rabbit_connection, update_result_use_case)
 
         yield
 

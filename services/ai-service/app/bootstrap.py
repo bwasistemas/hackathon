@@ -29,10 +29,10 @@ from app.adapters.inbound.rabbitmq_consumer import (
     connect_rabbitmq,
     start_diagram_upload_consumer,
 )
-from app.adapters.outbound.asyncpg_uploads import create_upload_repository
 from app.adapters.outbound.openai_adapter import OpenAiLlmAdapter, build_openai_client
 from app.adapters.outbound.minio_storage import MinIOStorage
 from app.adapters.outbound.llm_ocr import LlmOCRAdapter
+from app.adapters.outbound.rabbitmq_result_publisher import RabbitMQResultPublisher
 from app.application.analyze_diagram import AnalyzeDiagramUseCase
 from app.application.process_diagram_upload import ProcessDiagramUploadUseCase
 from app.config import load_settings
@@ -72,15 +72,12 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        upload_repo, db_pool = await create_upload_repository(settings.database_url)
-        app.state.db_pool = db_pool
         client = build_openai_client(settings.openai_api_key.get_secret_value(), settings.openai_base_url)
         llm = OpenAiLlmAdapter(client=client, model=settings.llm_model)
         ocr = LlmOCRAdapter(settings=settings)
         storage = MinIOStorage(settings)
 
         app.state.analyze_use_case = AnalyzeDiagramUseCase(llm)
-        process_upload = ProcessDiagramUploadUseCase(ocr, llm, upload_repo, storage)
 
         rabbit = await connect_rabbitmq(
             settings.rabbitmq_host,
@@ -89,12 +86,13 @@ def create_app() -> FastAPI:
             settings.rabbitmq_password.get_secret_value(),
         )
         app.state.rabbit_connection = rabbit
+
+        result_publisher = RabbitMQResultPublisher(rabbit)
+        process_upload = ProcessDiagramUploadUseCase(ocr, llm, result_publisher, storage)
         await start_diagram_upload_consumer(rabbit, process_upload)
 
         yield
 
-        if db_pool:
-            await db_pool.close()
         await rabbit.close()
 
     app = FastAPI(

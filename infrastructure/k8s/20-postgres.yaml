@@ -1,4 +1,20 @@
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-initdb
+data:
+  init-databases.sh: |
+    #!/bin/bash
+    set -e
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
+        SELECT 'CREATE DATABASE arch_reports OWNER $POSTGRES_USER'
+        WHERE NOT EXISTS (
+            SELECT FROM pg_database WHERE datname = 'arch_reports'
+        )\gexec
+    EOSQL
+    echo "init-databases.sh: arch_reports ready."
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: postgres-data
@@ -54,29 +70,28 @@ spec:
                   name: arch-secrets
                   key: POSTGRES_PASSWORD
             - name: POSTGRES_DB
-              valueFrom:
-                configMapKeyRef:
-                  name: arch-config
-                  key: POSTGRES_DB
+              value: "arch_uploads"
             - name: TZ
               valueFrom:
                 configMapKeyRef:
                   name: arch-config
                   key: TZ
             - name: DATABASE_URL
-              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)"
+              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/arch_uploads"
           volumeMounts:
             - name: postgres-data
               mountPath: /var/lib/postgresql/data
             - name: localtime
               mountPath: /etc/localtime
               readOnly: true
+            - name: postgres-initdb
+              mountPath: /docker-entrypoint-initdb.d
           readinessProbe:
             exec:
               command:
                 - sh
                 - -c
-                - pg_isready -U $(POSTGRES_USER) -d $(POSTGRES_DB)
+                - pg_isready -U $(POSTGRES_USER)
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
@@ -86,7 +101,7 @@ spec:
               command:
                 - sh
                 - -c
-                - pg_isready -U $(POSTGRES_USER) -d $(POSTGRES_DB)
+                - pg_isready -U $(POSTGRES_USER)
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5
@@ -106,3 +121,7 @@ spec:
           hostPath:
             path: /etc/localtime
             type: FileOrCreate
+        - name: postgres-initdb
+          configMap:
+            name: postgres-initdb
+            defaultMode: 0755
