@@ -55,13 +55,8 @@ spec:
                 secretKeyRef:
                   name: arch-secrets
                   key: POSTGRES_PASSWORD
-            - name: POSTGRES_DB
-              valueFrom:
-                configMapKeyRef:
-                  name: arch-config
-                  key: POSTGRES_DB
             - name: DATABASE_URL
-              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)"
+              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/arch_uploads"
           volumeMounts:
             - name: uploads-data
               mountPath: /app/uploads

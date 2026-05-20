@@ -3,7 +3,8 @@ kind: ConfigMap
 metadata:
   name: arch-config
 data:
-  POSTGRES_DB: "${POSTGRES_DB}"
+  POSTGRES_DB: "arch_uploads"
+  POSTGRES_DB_REPORTS: "arch_reports"
   RABBITMQ_HOST: "rabbitmq"
   RABBITMQ_PORT: "5672"
   RABBITMQ_VHOST: "/"

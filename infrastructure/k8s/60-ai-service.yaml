@@ -45,23 +45,6 @@ spec:
           env:
             - name: SERVICE_NAME
               value: "ai-service"
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: arch-secrets
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: arch-secrets
-                  key: POSTGRES_PASSWORD
-            - name: POSTGRES_DB
-              valueFrom:
-                configMapKeyRef:
-                  name: arch-config
-                  key: POSTGRES_DB
-            - name: DATABASE_URL
-              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)"
           volumeMounts:
             - name: uploads-data
               mountPath: /app/uploads

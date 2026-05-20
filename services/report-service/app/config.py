@@ -25,6 +25,9 @@ class Settings:
     minio_secret_key: str
     minio_region: str
     minio_use_ssl: bool
+    upload_service_url: str
+    upload_service_user: str
+    upload_service_password: str
 
 def _require_jwt_secret() -> str:
     """The report-service does not issue tokens, but it MUST share the same
@@ -45,7 +48,7 @@ def load_settings() -> Settings:
     return Settings(
         database_url=os.getenv(
             "DATABASE_URL",
-            "postgresql+asyncpg://fiap:fiap@postgres:5432/fiap",
+            "postgresql+asyncpg://fiap:fiap@postgres:5432/arch_reports",
         ),
         jwt_secret_key=_require_jwt_secret(),
         jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
@@ -55,4 +58,7 @@ def load_settings() -> Settings:
         minio_secret_key=os.getenv("MINIO_SECRET_KEY", "fiap1234"),
         minio_region=os.getenv("MINIO_REGION", "us-east-1"),
         minio_use_ssl=os.getenv("MINIO_USE_SSL", "false").lower() == "true",
+        upload_service_url=os.getenv("UPLOAD_SERVICE_URL", "http://upload-service:8001"),
+        upload_service_user=os.getenv("UPLOAD_SERVICE_USER", ""),
+        upload_service_password=os.getenv("UPLOAD_SERVICE_PASSWORD", ""),
     )
