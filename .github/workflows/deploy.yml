@@ -422,6 +422,20 @@ jobs:
                 envsubst "$GERAL_ENVSUBST_VARS" < "$manifest" | kubectl apply --validate=false -f -
               done
               rm -rf /tmp/arch-k8s-geral
+
+              # ── Sincronizar senha do Grafana (arch-geral) ─────────────────
+              # O Grafana persiste a senha admin no banco interno (SQLite/PVC)
+              # e ignora GF_SECURITY_ADMIN_PASSWORD apos a primeira init.
+              # grafana-cli reset-admin-password sincroniza sem reiniciar o pod.
+              if kubectl exec -n arch-geral deploy/grafana -- grafana cli --version &>/dev/null 2>&1; then
+                echo "Sincronizando senha admin do Grafana..."
+                kubectl exec -n arch-geral deploy/grafana -- \
+                  grafana cli admin reset-admin-password "$GRAFANA_PASSWORD" \
+                  && echo "Grafana: senha sincronizada para $GRAFANA_USER" \
+                  || echo "AVISO: falha ao sincronizar senha do Grafana"
+              else
+                echo "AVISO: grafana ainda nao acessivel — senha sera aplicada no primeiro start"
+              fi
             fi
 
             # ── Aguardar rollouts ─────────────────────────────────────────────
