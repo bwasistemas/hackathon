@@ -3,6 +3,8 @@
 MVP para análise automatizada de diagramas de arquitetura de software (imagens ou PDF), com microsserviços, mensageria, dois bancos de dados dedicados por serviço, observabilidade e pipeline de IA integrado ao fluxo real de upload.
 
 **Repositório:** [github.com/bwasistemas/hackathon](https://github.com/bwasistemas/hackathon)
+MVP: https://archanalyzer.brunoretiro.com.br/  
+
 
 ---
 
