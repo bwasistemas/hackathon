@@ -363,6 +363,19 @@ jobs:
               echo "AVISO: rabbitmq-0 ainda nao acessivel — senha sera aplicada no primeiro start"
             fi
 
+            # ── Sincronizar credenciais do PostgreSQL ─────────────────────────
+            # O PostgreSQL persiste o hash da senha no PGDATA (PVC) e nao rele
+            # POSTGRES_PASSWORD apos a primeira init. ALTER USER sincroniza.
+            if kubectl exec -n "$NAMESPACE" postgres-0 -- pg_isready -h 127.0.0.1 &>/dev/null 2>&1; then
+              echo "Sincronizando credenciais do PostgreSQL..."
+              kubectl exec -n "$NAMESPACE" postgres-0 -- \
+                psql -U "$POSTGRES_USER" -c "ALTER USER \"$POSTGRES_USER\" PASSWORD '$POSTGRES_PASSWORD';" postgres \
+                && echo "PostgreSQL: senha sincronizada para $POSTGRES_USER" \
+                || echo "AVISO: falha ao sincronizar senha do PostgreSQL"
+            else
+              echo "AVISO: postgres-0 ainda nao acessivel — senha sera aplicada no primeiro start"
+            fi
+
             # ── Secret KEDA ───────────────────────────────────────────────────
             RABBITMQ_AMQP_URL="amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq.${NAMESPACE}.svc.cluster.local:5672/"
             kubectl create secret generic rabbitmq-keda-auth \
