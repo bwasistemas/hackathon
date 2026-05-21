@@ -675,33 +675,100 @@ window.downloadPdf = async () => {
         if (!components.length) {
             bodyText('Nenhum componente identificado.');
         } else {
+            const componentItemGap = 6;
+            const componentPadTop = 5;
+            const componentPadBottom = 6;
+            const nameLineH = 5.5;
+            const typeLineH = 4.5;
+            const descLineH = 5;
+            const gapAfterHeader = 2;
+
             components.forEach(c => {
+                const name = c.name || '';
+                const typeStr = c.type ? `(${c.type})` : '';
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(10);
+                let nameLines = doc.splitTextToSize(name, innerTextW);
+
+                let typeLines = [];
+                let typeOnSameLine = false;
+                if (typeStr) {
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(8.5);
+                    const typeW = doc.getTextWidth(typeStr);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(10);
+                    const lastNameLine = nameLines[nameLines.length - 1] || '';
+                    const lastNameW = doc.getTextWidth(lastNameLine);
+                    if (lastNameW + 2 + typeW <= innerTextW) {
+                        typeOnSameLine = true;
+                    } else {
+                        doc.setFont('helvetica', 'normal');
+                        doc.setFontSize(8.5);
+                        typeLines = doc.splitTextToSize(typeStr, innerTextW);
+                    }
+                }
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
                 const descLines = doc.splitTextToSize(c.description || '', innerTextW);
-                const boxH = 8 + descLines.length * 5 + 3;
-                checkPage(boxH + sectionGap);
+
+                const headerH = nameLines.length * nameLineH + typeLines.length * typeLineH;
+                const descH = descLines.length * descLineH;
+                const boxH = componentPadTop + headerH + (descLines.length ? gapAfterHeader + descH : 0) + componentPadBottom;
+
+                checkPage(boxH + componentItemGap);
+
+                const boxTop = y - 4;
 
                 doc.setFillColor(246, 248, 252);
                 doc.setDrawColor(215, 222, 235);
                 doc.setLineWidth(0.2);
-                doc.roundedRect(margin, y - 4, contentW, boxH, cardCorner, cardCorner, 'FD');
+                doc.roundedRect(margin, boxTop, contentW, boxH, cardCorner, cardCorner, 'FD');
+
+                let cy = boxTop + componentPadTop + 3;
 
                 doc.setFont('helvetica', 'bold');
                 doc.setFontSize(10);
                 doc.setTextColor(30, 41, 59);
-                doc.text(c.name || '', margin + innerPad, y + 1);
+                nameLines.forEach((line, idx) => {
+                    doc.text(line, margin + innerPad, cy);
+                    if (idx === nameLines.length - 1 && typeOnSameLine) {
+                        const lineW = doc.getTextWidth(line);
+                        doc.setFont('helvetica', 'normal');
+                        doc.setFontSize(8.5);
+                        doc.setTextColor(100, 116, 139);
+                        doc.text(typeStr, margin + innerPad + lineW + 2, cy);
+                        doc.setFont('helvetica', 'bold');
+                        doc.setFontSize(10);
+                        doc.setTextColor(30, 41, 59);
+                    }
+                    cy += nameLineH;
+                });
 
-                const nameW = doc.getTextWidth(c.name || '') + 2;
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(8.5);
-                doc.setTextColor(100, 116, 139);
-                doc.text(`(${c.type || ''})`, margin + innerPad + nameW, y + 1);
+                if (typeLines.length) {
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(8.5);
+                    doc.setTextColor(100, 116, 139);
+                    typeLines.forEach(line => {
+                        doc.text(line, margin + innerPad, cy);
+                        cy += typeLineH;
+                    });
+                }
 
-                y += 6;
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(9);
-                doc.setTextColor(71, 85, 105);
-                descLines.forEach(line => { doc.text(line, margin + innerPad, y); y += 5; });
-                y += sectionGap;
+                if (descLines.length) {
+                    cy += gapAfterHeader;
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(9);
+                    doc.setTextColor(71, 85, 105);
+                    descLines.forEach(line => {
+                        doc.text(line, margin + innerPad, cy);
+                        cy += descLineH;
+                    });
+                }
+
+                y = boxTop + boxH + componentItemGap;
             });
         }
 
@@ -840,44 +907,148 @@ window.downloadPdf = async () => {
         }
 
         // ── ANEXO ORIGINAL (ultima pagina) ───────────────────────────
+        const renderAttachmentHeader = () => {
+            doc.setFillColor(0, 0, 0);
+            doc.rect(0, 0, pageW, 18, 'F');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10);
+            doc.setTextColor(237, 20, 91);
+            const headerLines = doc.splitTextToSize(
+                `Arquivo Original: ${data.filename || ''}`,
+                pageW - margin * 2,
+            );
+            doc.text(headerLines[0] || '', margin, 12);
+        };
+
+        const detectImageFormat = (contentType, dataUrl) => {
+            const ct = (contentType || '').toLowerCase();
+            if (ct.includes('png')) return 'PNG';
+            if (ct.includes('webp')) return 'WEBP';
+            if (ct.includes('jpeg') || ct.includes('jpg')) return 'JPEG';
+            const match = /^data:image\/([a-zA-Z0-9.+-]+);/.exec(dataUrl || '');
+            if (match) {
+                const sub = match[1].toLowerCase();
+                if (sub === 'png') return 'PNG';
+                if (sub === 'webp') return 'WEBP';
+                if (sub === 'jpeg' || sub === 'jpg') return 'JPEG';
+            }
+            return null;
+        };
+
         try {
             const attachRes = await apiFetch(
                 `/report-service/reports/${encodeURIComponent(currentReportId)}/attachment`,
             );
             if (attachRes.ok) {
-                const ct = attachRes.headers.get('content-type') || '';
+                const ct = (attachRes.headers.get('content-type') || '').toLowerCase();
                 if (ct.startsWith('image/')) {
                     const blob = await attachRes.blob();
-                    const imgDataUrl = await new Promise(resolve => {
+                    const imgDataUrl = await new Promise((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onloadend = () => resolve(reader.result);
+                        reader.onerror = () => reject(reader.error || new Error('FileReader failed'));
                         reader.readAsDataURL(blob);
                     });
-                    doc.addPage();
-                    doc.setFillColor(0, 0, 0);
-                    doc.rect(0, 0, pageW, 18, 'F');
-                    doc.setFont('helvetica', 'bold');
-                    doc.setFontSize(10);
-                    doc.setTextColor(237, 20, 91);
-                    doc.text(`Arquivo Original: ${data.filename || ''}`, margin, 12);
-                    const format = ct.includes('png') ? 'PNG' : 'JPEG';
-                    let imgW = contentW;
-                    let imgH = 0;
-                    try {
-                        const props = doc.getImageProperties(imgDataUrl);
-                        if (props && props.width > 0) {
-                            imgH = (props.height * imgW) / props.width;
+
+                    const format = detectImageFormat(ct, imgDataUrl);
+                    if (!format) {
+                        doc.addPage();
+                        renderAttachmentHeader();
+                        doc.setFont('helvetica', 'normal');
+                        doc.setFontSize(10);
+                        doc.setTextColor(71, 85, 105);
+                        doc.text(
+                            `Formato de imagem nao suportado para incorporacao no PDF (${ct || 'desconhecido'}).`,
+                            margin,
+                            32,
+                        );
+                    } else {
+                        let natW = 0;
+                        let natH = 0;
+                        try {
+                            const props = doc.getImageProperties(imgDataUrl);
+                            if (props && props.width > 0 && props.height > 0) {
+                                natW = props.width;
+                                natH = props.height;
+                            }
+                        } catch (propErr) {
+                            securityLogger.warn('getImageProperties failed', { error: propErr.message });
                         }
-                    } catch (_) {
-                        imgH = 0;
+
+                        if (!natW || !natH) {
+                            await new Promise(resolve => {
+                                const img = new Image();
+                                img.onload = () => {
+                                    natW = img.naturalWidth || img.width || 0;
+                                    natH = img.naturalHeight || img.height || 0;
+                                    resolve();
+                                };
+                                img.onerror = () => resolve();
+                                img.src = imgDataUrl;
+                            });
+                        }
+
+                        doc.addPage();
+                        renderAttachmentHeader();
+
+                        const imgTop = 24;
+                        const imgBottom = pageH - 15;
+                        const maxW = contentW;
+                        const maxH = imgBottom - imgTop;
+
+                        let imgW;
+                        let imgH;
+                        if (natW > 0 && natH > 0) {
+                            const ratio = natW / natH;
+                            imgW = maxW;
+                            imgH = imgW / ratio;
+                            if (imgH > maxH) {
+                                imgH = maxH;
+                                imgW = imgH * ratio;
+                            }
+                        } else {
+                            imgW = maxW;
+                            imgH = Math.min(maxH, 160);
+                        }
+
+                        const offsetX = margin + (maxW - imgW) / 2;
+                        try {
+                            doc.addImage(imgDataUrl, format, offsetX, imgTop, imgW, imgH, undefined, 'FAST');
+                        } catch (addErr) {
+                            securityLogger.warn('addImage failed, retrying as JPEG', { error: addErr.message });
+                            try {
+                                doc.addImage(imgDataUrl, 'JPEG', offsetX, imgTop, imgW, imgH, undefined, 'FAST');
+                            } catch (addErr2) {
+                                doc.setFont('helvetica', 'normal');
+                                doc.setFontSize(10);
+                                doc.setTextColor(71, 85, 105);
+                                const lines = doc.splitTextToSize(
+                                    `Nao foi possivel renderizar a imagem do diagrama: ${addErr2.message}`,
+                                    contentW,
+                                );
+                                let ey = imgTop + 4;
+                                lines.forEach(line => { doc.text(line, margin, ey); ey += 5; });
+                            }
+                        }
                     }
-                    if (!imgH || !Number.isFinite(imgH)) {
-                        imgH = 120;
-                    }
-                    doc.addImage(imgDataUrl, format, margin, 22, imgW, imgH);
+                } else if (ct.includes('pdf')) {
+                    doc.addPage();
+                    renderAttachmentHeader();
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(10);
+                    doc.setTextColor(71, 85, 105);
+                    doc.text(
+                        'O arquivo original e um PDF e nao pode ser incorporado como imagem neste relatorio.',
+                        margin,
+                        32,
+                    );
                 }
+            } else {
+                securityLogger.warn('attachment fetch failed', { status: attachRes.status });
             }
-        } catch (_) { /* skip silently */ }
+        } catch (attachErr) {
+            securityLogger.warn('attachment processing failed', { error: attachErr.message });
+        }
 
         // ── NUMERACAO DE PAGINAS ─────────────────────────────────────
         const total = doc.getNumberOfPages();
