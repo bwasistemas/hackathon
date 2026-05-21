@@ -12,11 +12,13 @@ logger = logging.getLogger(__name__)
 def parse_asyncpg_dsn(database_url: str) -> dict:
     """Turn postgresql+asyncpg://user:pass@host:port/db into asyncpg kwargs."""
     db_url = database_url.replace("postgresql+asyncpg://", "")
-    user_part, rest = db_url.split("@", 1)
+    # rfind para lidar com senhas que contenham '@'
+    last_at = db_url.rfind("@")
+    user_part = db_url[:last_at]
+    rest = db_url[last_at + 1:]
     user = user_part.split(":")[0]
     password = ":".join(user_part.split(":")[1:])
-    host_port_db = rest
-    host_port, db = host_port_db.rsplit("/", 1)
+    host_port, db = rest.rsplit("/", 1)
     host, port = host_port.rsplit(":", 1)
     return {
         "host": host,
