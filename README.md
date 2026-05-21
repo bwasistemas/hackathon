@@ -5,6 +5,13 @@ MVP para análise automatizada de diagramas de arquitetura de software (imagens 
 **Repositório:** [github.com/bwasistemas/hackathon](https://github.com/bwasistemas/hackathon)
 MVP: https://archanalyzer.brunoretiro.com.br/  
 
+Equipe:
+Bruno Amorim / RM365279
+Gabriel Rizzo / RM366033
+Mauricio Magnani / RM365929
+Vinicius Martins / RM365278
+Gerson Luiz / RM366284
+
 
 ---
 
