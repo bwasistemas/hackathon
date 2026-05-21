@@ -40,7 +40,7 @@ spec:
             - -c
             - |
               until pg_isready -h postgres -U "$POSTGRES_USER"; do sleep 2; done
-              psql -h postgres -U "$POSTGRES_USER" -c "SELECT 'CREATE DATABASE arch_reports OWNER \"$POSTGRES_USER\"' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'arch_reports')\gexec"
+              psql -h postgres -U "$POSTGRES_USER" -tc "SELECT 1 FROM pg_database WHERE datname='arch_reports'" | grep -q 1 || createdb -h postgres -U "$POSTGRES_USER" arch_reports
               echo "create-db: arch_reports ready."
           env:
             - name: POSTGRES_USER
