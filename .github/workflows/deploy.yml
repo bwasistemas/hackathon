@@ -384,7 +384,7 @@ jobs:
               --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
             # ── Aplicar manifests ─────────────────────────────────────────────
-            ENVSUBST_VARS='${IMAGE_PREFIX} ${IMAGE_TAG} ${NAMESPACE} ${DOMAIN} ${POSTGRES_DB} ${MINIO_BUCKET} ${TZ} ${ALLOWED_ORIGINS} ${FRONTEND_NODEPORT} ${RABBITMQ_MGMT_NODEPORT} ${MINIO_CONSOLE_NODEPORT} ${MAX_REPLICAS} ${QUEUE_MESSAGES_PER_REPLICA}'
+            ENVSUBST_VARS='${IMAGE_PREFIX} ${IMAGE_TAG} ${NAMESPACE} ${DOMAIN} ${POSTGRES_DB} ${MINIO_BUCKET} ${TZ} ${ALLOWED_ORIGINS} ${FRONTEND_NODEPORT} ${RABBITMQ_MGMT_NODEPORT} ${MINIO_CONSOLE_NODEPORT} ${MAX_REPLICAS} ${QUEUE_MESSAGES_PER_REPLICA} ${POSTGRES_USER}'
             for manifest in $(ls "$MANIFESTS_DIR"/*.yaml | sort); do
               echo "Aplicando: $(basename $manifest)..."
               envsubst "$ENVSUBST_VARS" < "$manifest" | kubectl apply --validate=false -n "$NAMESPACE" -f -

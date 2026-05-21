@@ -94,6 +94,8 @@ spec:
                 - 127.0.0.1
                 - -p
                 - "5432"
+                - -U
+                - ${POSTGRES_USER}
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
@@ -106,6 +108,8 @@ spec:
                 - 127.0.0.1
                 - -p
                 - "5432"
+                - -U
+                - ${POSTGRES_USER}
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5
