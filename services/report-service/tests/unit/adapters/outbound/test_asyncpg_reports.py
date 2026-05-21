@@ -78,6 +78,17 @@ def test_parse_asyncpg_dsn_preserves_colons_in_password():
     assert out["database"] == "db"
 
 
+def test_parse_asyncpg_dsn_handles_at_sign_in_password():
+    """Passwords containing '@' must not confuse the host parser (uses rfind)."""
+    url = "postgresql+asyncpg://fiap:8\\wWwj@BQy#4@postgres:5432/arch_reports"
+    out = parse_asyncpg_dsn(url)
+    assert out["user"] == "fiap"
+    assert out["password"] == "8\\wWwj@BQy#4"
+    assert out["host"] == "postgres"
+    assert out["port"] == 5432
+    assert out["database"] == "arch_reports"
+
+
 # ---------------------------------------------------------------------------
 # AsyncpgFeedbackRepository
 # ---------------------------------------------------------------------------
