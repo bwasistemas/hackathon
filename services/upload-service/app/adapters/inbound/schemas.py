@@ -45,3 +45,9 @@ class UploadDetailSchema(BaseModel):
     minio_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+
+class UploadStatsSchema(BaseModel):
+    """Aggregate upload counts — consumed by report-service stats endpoint."""
+    total: int
+    by_status: dict

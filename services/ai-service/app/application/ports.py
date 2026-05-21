@@ -14,12 +14,14 @@ class TextExtractionPort(Protocol):
         ...
 
 
-class UploadRepositoryPort(Protocol):
-    async def mark_processing(self, upload_id: str) -> None:
+class ResultPublisherPort(Protocol):
+    """Outbound port: publishes analysis result events to diagram.result queue."""
+
+    async def publish_processing(self, upload_id: str) -> None:
         ...
 
-    async def mark_done_with_payload(self, upload_id: str, payload_json: str) -> None:
-        """Persist completion; payload_json is the serialized file_path column value."""
+    async def publish_done(self, upload_id: str, payload_json: str) -> None:
+        ...
 
-    async def mark_failed(self, upload_id: str, error_message: str) -> None:
-        """Set status ERROR and persist a JSON payload the report API can display."""
+    async def publish_failed(self, upload_id: str, error_message: str) -> None:
+        ...

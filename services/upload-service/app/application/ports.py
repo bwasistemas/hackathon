@@ -37,6 +37,22 @@ class UploadRepositoryPort(Protocol):
         """Update upload status."""
         ...
 
+    async def mark_processing(self, upload_id: str) -> None:
+        """Set status PROCESSING — called when ai-service starts analysing."""
+        ...
+
+    async def mark_done_with_payload(self, upload_id: str, payload_json: str) -> None:
+        """Set status DONE and persist the analysis JSON payload."""
+        ...
+
+    async def mark_failed(self, upload_id: str, error_message: str) -> None:
+        """Set status ERROR and persist an error payload."""
+        ...
+
+    async def get_upload_stats(self) -> dict:
+        """Return aggregate counts: {total: int, by_status: {status: count}}."""
+        ...
+
 
 class MessagePublisherPort(Protocol):
     """Port for publishing messages to queue."""

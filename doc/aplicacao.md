@@ -2,70 +2,143 @@
 
 ## Propósito
 
-O **Arch Analyzer** é um sistema distribuído que recebe diagramas de arquitetura (imagens ou PDF), extrai texto por OCR quando necessário, envia o conteúdo a um modelo de linguagem (LLM) e devolve uma análise estruturada: componentes identificados, riscos arquiteturais e um resumo. O cenário típico é um hackathon ou laboratório acadêmico, com foco em desacoplamento entre serviços e observabilidade.
+O **Arch Analyzer** é um sistema distribuído que recebe diagramas de arquitetura (imagens ou PDF), extrai texto por OCR multimodal com LLM, analisa com um swarm de agentes e devolve um relatório estruturado: componentes identificados, riscos arquiteturais e resumo. Cada serviço possui banco de dados dedicado e se comunica por HTTP (com JWT) ou por filas AMQP — nunca por acesso direto ao banco alheio.
 
 ## Arquitetura em alto nível
 
-O sistema segue um padrão de **microsserviços** orquestrados por Docker Compose:
+O sistema segue o padrão de **microsserviços** com **arquitetura hexagonal** em cada serviço:
 
-- **Frontend** (interface web estática servida por Nginx) expõe o painel e o fluxo de upload.
-- **Upload Service** recebe arquivos, persiste metadados no PostgreSQL e publica mensagens na fila **RabbitMQ**.
-- **AI Service** consome a fila, executa OCR (Tesseract, PDF via Poppler), chama a API do provedor LLM e atualiza o registro do upload no banco.
-- **Report Service** consulta o PostgreSQL e expõe APIs para listar e servir análises já persistidas (sem chamar LLM nem ler arquivos de upload diretamente no fluxo principal de leitura).
-- **PostgreSQL** centraliza o estado dos uploads e o payload da análise.
-- **Prometheus** e **Grafana** coletam e exibem métricas HTTP dos serviços FastAPI.
+- **Frontend** (SPA estática servida por Nginx): painel de upload, acompanhamento de status, relatórios e feedback. Proxy reverso para as APIs na mesma origem.
+- **Upload Service**: recebe arquivos, persiste metadados em `arch_uploads`, publica `diagram.upload` no RabbitMQ e consome `diagram.result` para atualizar o status.
+- **AI Service**: consome `diagram.upload`, executa OCR multimodal + swarm Strands, publica `diagram.result`. **Sem banco de dados próprio.**
+- **Report Service**: serve relatórios lendo o Upload Service via HTTP (JWT service-to-service). Persiste feedback em `arch_reports`.
+- **PostgreSQL**: dois bancos dedicados na mesma instância — `arch_uploads` e `arch_reports`.
+- **RabbitMQ**: broker AMQP com duas filas: `diagram.upload` e `diagram.result`.
+- **MinIO**: object storage S3-compatible para os arquivos enviados.
+- **Prometheus / Grafana / Loki / Promtail**: métricas HTTP, dashboards e logs dos containers.
 
-Um diagrama textual da arquitetura e a lista de portas estão no [`README.md`](../README.md) na raiz do repositório.
+## Fluxo principal
 
-## Fluxo principal (resumo)
+```
+Analista
+  │ POST /upload (JWT)
+  ▼
+Frontend (Nginx :8051)
+  │ proxy /upload-service/
+  ▼
+Upload Service (:8001)
+  ├─ PUT arquivo → MinIO
+  ├─ INSERT uploads (status=RECEIVED) → arch_uploads
+  └─ Publica diagram.upload → RabbitMQ
+                                  │
+                                  ▼
+                            AI Service (:8003)
+                              ├─ Publica diagram.result {PROCESSING} → RabbitMQ
+                              ├─ GET arquivo ← MinIO
+                              ├─ OCR multimodal (Gemma 4 26B) + swarm Strands (DeepSeek v3.2)
+                              └─ Publica diagram.result {DONE, payload_json} → RabbitMQ
+                                  │
+                                  ▼ (consome diagram.result)
+                            Upload Service
+                              └─ UPDATE uploads (status=DONE, file_path=payload_json)
 
-1. O usuário envia um diagrama pelo frontend para o **Upload Service**.
-2. O serviço grava o arquivo (volume compartilhado), cria ou atualiza a linha na tabela de uploads (por exemplo status `RECEIVED`) e publica uma mensagem na fila (por exemplo `diagram.upload`) com identificador do upload e caminho do arquivo.
-3. O **AI Service** processa a mensagem em background: marca o upload como em processamento, extrai texto (imagem ou PDF), chama o LLM com um prompt fixo que exige resposta em JSON e, ao final, marca o upload como concluído e grava o resultado (texto + saída da IA) no banco.
-4. O **Report Service** e/ou o frontend consumem as APIs de relatório para exibir componentes, riscos e resumo no painel.
+Analista
+  │ GET /reports/{id} (JWT)
+  ▼
+Frontend
+  │ proxy /report-service/
+  ▼
+Report Service (:8004)
+  ├─ GET /uploads/{id} → Upload Service (JWT s2s)
+  └─ retorna ReportResponse {analysis, status, filename}
+```
 
-## Serviços e portas (referência)
+## Serviços e portas
 
-| Serviço | Porta | Função resumida |
-|---------|-------|-----------------|
-| Frontend | 8051 | Interface web |
-| Upload API | 8001 | Upload e registro de diagramas |
-| AI API | 8003 | Health, endpoint `/analyze` (teste direto) e worker RabbitMQ + OCR + LLM |
-| Report API | 8004 | Leitura de análises do banco |
-| RabbitMQ | 5672 / 15672 | Fila AMQP e interface de gestão |
-| PostgreSQL | 5432 | Persistência |
-| Prometheus | 9090 | Métricas |
+| Serviço | Porta | Função |
+|---------|-------|--------|
+| Frontend | 8051 | SPA + proxy reverso |
+| Upload Service | 8001 | Upload, JWT, fila, status |
+| AI Service | 8003 | OCR + LLM + publicador de resultado |
+| Report Service | 8004 | Relatórios via HTTP s2s + feedback |
+| RabbitMQ AMQP | 5672 | Broker de mensagens |
+| RabbitMQ Management | 15672 | Interface de administração |
+| PostgreSQL | 5432 | arch_uploads + arch_reports |
+| MinIO API | 9000 | Object storage S3 |
+| MinIO Console | 9001 | Interface de administração |
+| Prometheus | 9090 | Coleta de métricas |
 | Grafana | 3000 | Dashboards |
+| Loki | 3100 | Armazenamento de logs |
 
-Valores exatos de URL e credenciais padrão de desenvolvimento aparecem no `README.md` principal.
+## Bancos de dados
+
+| Banco | Dono | Tabelas | Criação |
+|-------|------|---------|---------|
+| `arch_uploads` | Upload Service | `uploads`, `users` | `POSTGRES_DB` env (fresh) ou `initContainer create-db` (k8s) / `postgres-setup` (Compose) |
+| `arch_reports` | Report Service | `feedback` | `init-databases.sh` (fresh) ou `initContainer create-db` (k8s) / `postgres-setup` (Compose) |
+
+Nenhum serviço acessa o banco do outro. A comunicação entre Report Service e Upload Service ocorre exclusivamente via HTTP REST com JWT.
+
+## Filas RabbitMQ
+
+| Fila | Publisher | Consumer | Payload |
+|------|-----------|----------|---------|
+| `diagram.upload` | Upload Service | AI Service | `{upload_id, filename, file_path, content_type}` |
+| `diagram.result` | AI Service | Upload Service | `{upload_id, status, payload_json?, error_message?}` |
+
+Ambas as filas são declaradas com `durable=True` e mensagens com `DeliveryMode.PERSISTENT`.
+
+## Autenticação
+
+- **JWT emitido pelo Upload Service** (`POST /token`). O mesmo `JWT_SECRET_KEY` é configurado em todos os serviços.
+- **Service-to-service (s2s)**: o Report Service obtém um token via `POST /token` com `UPLOAD_SERVICE_USER`/`UPLOAD_SERVICE_PASSWORD` e o renova automaticamente 60 s antes do vencimento.
+- **Rate limiting** por IP via SlowAPI em todos os serviços FastAPI.
 
 ## Configuração
 
-As variáveis de ambiente são definidas principalmente em `infrastructure/.env` (a partir de `infrastructure/.env.example`). Pontos importantes:
+Variáveis centralizadas em `infrastructure/.env` (ver `infrastructure/.env.example`):
 
-- **PostgreSQL**: usuário, senha e nome do banco.
-- **RabbitMQ**: host, porta, usuário e senha (o AI Service usa esses valores para conectar e consumir a fila).
-- **LLM**: `OPENAI_API_KEY`, `OPENAI_BASE_URL` (compatível com OpenAI ou proxies como OpenRouter) e `LLM_MODEL`.
-
-Em produção, altere senhas padrão e evite expor o PostgreSQL publicamente.
-
-## Como executar
-
-Formas comuns:
-
-- **Script `./setup.sh`** na raiz do repositório: verifica Docker, cria `.env` se faltar, faz build e sobe os containers.
-- **Docker Compose manual**: `cd infrastructure && docker compose up -d` (ou `docker-compose`, conforme ambiente).
-
-O frontend pode ser servido localmente para desenvolvimento (por exemplo `python -m http.server` na pasta do frontend), conforme descrito no README.
+| Variável | Usado por | Descrição |
+|----------|-----------|-----------|
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` | Upload, Report | Credenciais do PostgreSQL |
+| `RABBITMQ_USER` / `RABBITMQ_PASSWORD` | Upload, AI | Credenciais do RabbitMQ |
+| `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | Upload, AI, Report | Credenciais do MinIO |
+| `MINIO_BUCKET` | Upload, AI, Report | Bucket (padrão: `fiap`) |
+| `JWT_SECRET_KEY` | Upload, AI, Report | Segredo compartilhado JWT (mínimo 32 chars) |
+| `ADMIN_USER` / `ADMIN_PASSWORD` | Upload | Credenciais do usuário padrão |
+| `UPLOAD_SERVICE_URL` | Report | URL do Upload Service para chamadas s2s |
+| `UPLOAD_SERVICE_USER` / `UPLOAD_SERVICE_PASSWORD` | Report | Credenciais s2s (normalmente = `ADMIN_USER`/`PASSWORD`) |
+| `OPENAI_API_KEY` | AI | Chave do provedor LLM |
+| `OPENAI_BASE_URL` | AI | URL base do provedor (OpenRouter em produção) |
+| `LLM_MODEL` | AI | Modelo de análise (padrão: `deepseek/deepseek-v3.2`) |
+| `LLM_OCR` | AI | Modelo de OCR multimodal (padrão: `google/gemma-4-26b-a4b-it`) |
+| `ALLOWED_ORIGINS` | Upload, AI, Report | Origens CORS permitidas |
 
 ## Observabilidade
 
-Os serviços FastAPI expõem métricas compatíveis com Prometheus (por exemplo via instrumentação HTTP). O Grafana pode ser provisionado com dashboards que apontam para o Prometheus como fonte de dados.
+- **Métricas**: endpoints `/metrics` em todos os serviços FastAPI (`prometheus-fastapi-instrumentator`). Prometheus coleta via scrape; no Kubernetes usa auto-descoberta por annotations de pod.
+- **Logs**: JSON estruturado com `timestamp`, `level`, `service`, `name`, `message`. Promtail coleta e envia ao Loki. Grafana expõe dashboards de métricas e logs.
 
-## CI/CD
+## Deploy
 
-O repositório inclui pipeline de CI (por exemplo lint, testes e build de imagens). Detalhes específicos estão em `infrastructure/.github/workflows/`.
+| Ambiente | Tecnologia | Namespaces |
+|----------|-----------|------------|
+| Local | Docker Compose | — |
+| Produção / Homologação | Kubernetes (Kind na VPS) | `arch-prod` (main), `arch-hmg` (hmg) |
+| Observabilidade | Kubernetes | `arch-geral` (compartilhado, não rotacionado) |
 
-## Onde aprofundar
+Pipeline CI/CD: GitHub Actions → testes em paralelo → build/push GHCR → deploy via SSH + kubectl. O AI Service escala automaticamente no Kubernetes via KEDA com base no tamanho da fila `diagram.upload`.
 
-- Detalhes internos do **AI Service** (camadas hexagonais, portas e adaptadores): [ai-service.md](ai-service.md).
+## Como executar
+
+```bash
+# Setup local completo
+cp infrastructure/.env.example infrastructure/.env
+# Edite infrastructure/.env
+
+chmod +x setup.sh && ./setup.sh   # Linux/macOS
+# ou
+chmod +x wsl-setup.sh && ./wsl-setup.sh   # WSL
+```
+
+Ver instruções detalhadas no [`README.md`](../README.md) da raiz.

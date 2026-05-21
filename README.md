@@ -1,6 +1,6 @@
 # Arch Analyzer
 
-MVP para análise automatizada de diagramas de arquitetura de software (imagens ou PDF), com microsserviços, mensageria, persistência, observabilidade e pipeline de IA integrado ao fluxo real de upload.
+MVP para análise automatizada de diagramas de arquitetura de software (imagens ou PDF), com microsserviços, mensageria, dois bancos de dados dedicados por serviço, observabilidade e pipeline de IA integrado ao fluxo real de upload.
 
 **Repositório:** [github.com/bwasistemas/hackathon](https://github.com/bwasistemas/hackathon)
 
@@ -25,67 +25,86 @@ Documentação complementar em [`doc/`](doc/README.md).
 ## Arquitetura
 
 ```text
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   Frontend      │────▶│  Upload Service  │────▶│    RabbitMQ     │
-│  (Nginx/SPA)    │     │   (FastAPI)      │     │   (Message Q)   │
-│   :8051         │     │   :8001          │     │   :5672/:15672  │
-└─────────────────┘     └───────┬──────────┘     └────────┬────────┘
-                                │                         │
-                                │ store file              │ notify
-                                ▼                         ▼
-                        ┌─────────────────┐     ┌──────────────────┐
-                        │     MinIO       │◀────│   AI Service     │
-                        │  (Object Store) │     │   (LLM + OCR)    │
-                        │  :9000/:9001    │     │   :8003          │
-                        └─────────────────┘     └───────┬──────────┘
-                                                        │
-                                                        │ persist result
-                                                        ▼
-┌──────────────────┐                          ┌──────────────────┐
-│  Report Service  │◀─────────────────────────│   PostgreSQL     │
-│   (FastAPI)      │                          │   :5432          │
-│   :8004          │                          └──────────────────┘
-└──────────────────┘
+  Analista
+     │ HTTPS
+     ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Frontend (Nginx :8051)                                          │
+│  SPA estática · proxy /upload-service/ /report-service/ /ai-service/ │
+└────────┬──────────────────────┬───────────────────────┬──────────┘
+         │ HTTP+JWT              │ HTTP+JWT               │ HTTP
+         ▼                       ▼                        ▼
+┌─────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+│  Upload Service │    │  Report Service  │    │   AI Service     │
+│  FastAPI :8001  │    │  FastAPI :8004   │    │   FastAPI :8003  │
+│                 │    │                  │    │  (sem banco)     │
+│  Publica:       │◀───│  GET /uploads    │    │  KEDA autoscale  │
+│  diagram.upload │    │  GET /stats      │    └────────┬─────────┘
+│                 │    │  (JWT s2s)       │             │ AMQP
+│  Consome:       │    └────────┬─────────┘             │
+│  diagram.result │             │ asyncpg               ▼
+└────────┬────────┘             ▼              ┌──────────────────┐
+         │ asyncpg     ┌──────────────┐        │    RabbitMQ      │
+         ▼             │ arch_reports │        │    :5672         │
+┌──────────────┐       │ PostgreSQL   │        │                  │
+│ arch_uploads │       │ (feedback)   │        │ diagram.upload ──┼──▶ AI Service
+│ PostgreSQL   │       └──────────────┘        │ diagram.result ◀─┼─── AI Service
+│ (uploads +   │                               └──────────────────┘
+│  users)      │                                        │
+└──────────────┘       ┌──────────────────────┐         │
+         ▲             │        MinIO          │◀────────┘ S3 API
+         │             │  Object Store :9000   │
+         └─────────────│  (arquivos de upload) │
+           PUT/result  └──────────────────────┘
+```
 
-Observabilidade (logs + métricas):
+```text
+Observabilidade:
 
-┌──────────────┐   scrape   ┌──────────────┐   datasource  ┌──────────────┐
-│  Prometheus  │──────────▶│    Grafana    │◀─────────────│     Loki     │
-│   :9090      │            │    :3000      │               │    :3100     │
-└──────────────┘            └──────────────┘               └──────╲───────┘
-                                                                   ║ push logs
-                                                            ┌──────╚───────┐
-                                                            │   Promtail   │
-                                                            │ (Docker logs)│
-                                                            └──────────────┘
+┌──────────────┐  scrape  ┌──────────────┐  datasource  ┌──────────────┐
+│  Prometheus  │─────────▶│    Grafana   │◀─────────────│     Loki     │
+│   :9090      │          │    :3000     │              │    :3100     │
+└──────────────┘          └──────────────┘              └──────▲───────┘
+                                                               │ push logs
+                                                        ┌──────┴───────┐
+                                                        │   Promtail   │
+                                                        └──────────────┘
 ```
 
 | Componente | Responsabilidade |
 |------------|------------------|
-| **Frontend** | SPA estática (Nginx): upload, acompanhamento de status, relatórios e feedback. Login JWT via proxy na mesma origem. |
-| **Upload Service** | Recebe arquivo, valida tamanho/tipo, grava no MinIO, persiste metadados e publica evento no RabbitMQ. |
-| **RabbitMQ** | Desacopla upload do processamento de IA. |
-| **AI Service** | Consome a fila, valida MIME/extensão/tamanho, extrai conteúdo visual (LLM OCR), executa swarm de agentes LLM e persiste a análise. |
-| **Report Service** | Consulta relatórios, anexo original, estatísticas e feedback — sem reprocessar imagens. |
-| **PostgreSQL** | Uploads, status, payload de análise e avaliações. |
-| **MinIO** | Object storage (S3-compatible) dos arquivos enviados. |
+| **Frontend** | SPA estática (Nginx): upload, acompanhamento de status, relatórios e feedback. Proxy reverso para as APIs na mesma origem. Login JWT. |
+| **Upload Service** | Recebe arquivo, valida tamanho/tipo, grava no MinIO, persiste metadados em `arch_uploads`, publica `diagram.upload` e consome `diagram.result` para atualizar o status. Emite tokens JWT. |
+| **RabbitMQ** | Desacopla upload do processamento de IA. Fila `diagram.upload` (upload→ai) e `diagram.result` (ai→upload). |
+| **AI Service** | Consome `diagram.upload`, executa OCR multimodal (Gemma 4 26B) com fallback Tesseract, analisa com swarm Strands (DeepSeek v3.2) e publica o resultado em `diagram.result`. **Sem acesso direto a banco de dados.** |
+| **Report Service** | Serve relatórios e coleta feedback. Lê dados de uploads via **HTTP do Upload Service** (JWT service-to-service). Persiste avaliações em `arch_reports`. |
+| **PostgreSQL** | Dois bancos dedicados: `arch_uploads` (dono: Upload Service) e `arch_reports` (dono: Report Service). |
+| **MinIO** | Object storage S3-compatible dos arquivos enviados. |
 | **Prometheus / Grafana / Loki / Promtail** | Métricas HTTP, dashboards e logs estruturados dos containers. |
 
-Cada serviço FastAPI segue **arquitetura hexagonal** (domínio, aplicação, portas e adaptadores). Detalhes do AI Service: [`doc/ai-service.md`](doc/ai-service.md).
+Cada serviço FastAPI segue **arquitetura hexagonal** (domínio, aplicação, portas e adaptadores).
+
+| Documento técnico | Conteúdo |
+| --- | --- |
+| [`doc/upload-service.md`](doc/upload-service.md) | Casos de uso, adaptadores asyncpg/MinIO/RabbitMQ, consumidor AMQP e ciclo de status |
+| [`doc/ai-service.md`](doc/ai-service.md) | OCR multimodal, swarm Strands/DeepSeek, portas e adaptadores |
+| [`doc/report-service.md`](doc/report-service.md) | HttpUploadClientAdapter (s2s JWT), feedback, estatísticas e bootstrap |
+| [`doc/aplicacao.md`](doc/aplicacao.md) | Visão geral: fluxos, portas, filas, bancos e configuração |
+| [`doc/c4-arch-analyzer-clean.dsl`](doc/c4-arch-analyzer-clean.dsl) | Diagrama C4 (Structurizr DSL): contexto, containers, fluxos e deploy |
 
 ---
 
 ## Fluxo principal
 
 1. O usuário envia PNG, JPG, JPEG ou PDF pelo frontend.
-2. O **Upload Service** aplica limite de **10 MB**, salva no MinIO e cria registro no PostgreSQL com status `RECEIVED`.
-3. O Upload Service publica evento no RabbitMQ (`upload_id`, `filename`, `file_path`, `content_type`).
-4. O **AI Service** consome a mensagem, marca `PROCESSING` e baixa o arquivo do MinIO.
-5. O AI Service valida extensão, tamanho (até **50 MB** no processamento) e MIME; executa extração visual/OCR e análise com LLM.
-6. O resultado é normalizado em JSON (`components`, `risks`, `summary`) e gravado no PostgreSQL com status `DONE`.
-7. O **Report Service** e o frontend exibem o relatório, anexo e feedback.
+2. O **Upload Service** aplica limite de **10 MB**, salva no MinIO e cria registro em `arch_uploads` com status `RECEIVED`.
+3. O Upload Service publica `diagram.upload` no RabbitMQ (`upload_id`, `filename`, `file_path`, `content_type`).
+4. O **AI Service** consome a mensagem e publica `diagram.result {status: PROCESSING}`; o Upload Service recebe e atualiza o banco.
+5. O AI Service baixa o arquivo do MinIO, executa OCR multimodal (Gemma 4 26B) com fallback Tesseract e analisa com swarm Strands (DeepSeek v3.2).
+6. O resultado (`components`, `risks`, `summary`) é publicado em `diagram.result {status: DONE, payload_json}`; o Upload Service grava o payload em `arch_uploads`.
+7. O **Report Service** serve o relatório lendo o Upload Service via HTTP. O usuário pode enviar feedback (1–5 estrelas) persistido em `arch_reports`.
 
-Estados persistidos no código: `RECEIVED`, `PROCESSING`, `DONE`. Falhas de validação e integração são tratadas por exceções HTTP ou payload de erro na análise.
+Estados do upload: `RECEIVED` → `PROCESSING` → `DONE` | `ERROR`.
 
 ---
 
@@ -93,20 +112,22 @@ Estados persistidos no código: `RECEIVED`, `PROCESSING`, `DONE`. Falhas de vali
 
 ```
 hackathon/
-├── frontend/                 # SPA + Nginx (proxy para APIs)
+├── frontend/                 # SPA estática (HTML/JS/CSS) + Nginx
 ├── services/
-│   ├── upload-service/       # Upload, MinIO, fila, emissão JWT
-│   ├── ai-service/           # RabbitMQ consumer, OCR/LLM, persistência
-│   └── report-service/       # Leitura de relatórios e feedback
+│   ├── upload-service/       # Upload, MinIO, filas diagram.upload/result, JWT
+│   ├── ai-service/           # Consumer RabbitMQ, OCR/LLM Strands, sem banco próprio
+│   └── report-service/       # Relatórios via HTTP s2s, feedback em arch_reports
 ├── infrastructure/
-│   ├── docker-compose.yml    # Stack local completo
+│   ├── docker-compose.yml    # Stack local (inclui postgres-setup idempotente)
 │   ├── docker-compose.prod.yml
-│   ├── k8s/                  # Manifests Kubernetes (deploy na VPS)
+│   ├── k8s/                  # Manifests Kubernetes (deploy na VPS via Kind)
+│   ├── k8s-geral/            # Observabilidade no namespace arch-geral
+│   ├── postgres/             # init-databases.sh (fresh deploy)
 │   ├── prometheus/ grafana/ loki/ promtail/ rabbitmq/
 │   └── .env.example
-├── .github/workflows/          # Testes e deploy (GitHub Actions)
-├── .vps/                       # Scripts de setup inicial da VPS
-├── doc/                        # Documentação técnica em português
+├── .github/workflows/        # Testes e deploy (GitHub Actions)
+├── .vps/                     # Scripts de setup inicial da VPS
+├── doc/                      # Documentação técnica + diagramas C4
 ├── scripts/
 │   └── security-check.sh     # Validação de configurações de segurança
 ├── setup.sh                  # Sobe o ambiente local (Linux/macOS)
@@ -131,7 +152,6 @@ cp infrastructure/.env.example infrastructure/.env
 Gere um `JWT_SECRET_KEY` seguro (obrigatório):
 
 ```bash
-# Ou python3
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
@@ -205,6 +225,11 @@ MINIO_ACCESS_KEY=fiap
 MINIO_SECRET_KEY=<senha-forte>
 MINIO_BUCKET=fiap
 
+# Report Service — chamadas service-to-service ao Upload Service
+UPLOAD_SERVICE_URL=http://upload-service:8001
+UPLOAD_SERVICE_USER=${ADMIN_USER}
+UPLOAD_SERVICE_PASSWORD=${ADMIN_PASSWORD}
+
 # Grafana
 GRAFANA_USER=fiap
 GRAFANA_PASSWORD=<senha-forte>
@@ -220,13 +245,14 @@ LOG_LEVEL=INFO
 ### Autenticação e autorização
 
 - **JWT**: o Upload Service emite tokens (`POST /upload-service/token` via proxy do frontend); AI e Report Service validam o mesmo `JWT_SECRET_KEY`.
+- **Service-to-service**: o Report Service obtém um token via `POST /token` com `UPLOAD_SERVICE_USER`/`PASSWORD` e o renova automaticamente 60 s antes do vencimento.
 - **Rate limiting** nos serviços FastAPI (SlowAPI).
 - **Headers de segurança** e **CORS** restrito (`ALLOWED_ORIGINS`).
 
 ### Validação de entrada
 
 - Upload: limite de **10 MB** e tipos permitidos no Upload Service.
-- Processamento: validação de extensão, **50 MB**, MIME real (`python-magic`) no AI Service.
+- Processamento: validação de extensão e MIME real (`python-magic`) no AI Service.
 - Resposta da IA: JSON com schema Pydantic (`components`, `risks`, `summary`); mascaramento de dados sensíveis antes da análise subsequente.
 
 ### Verificação antes do deploy
@@ -237,24 +263,44 @@ LOG_LEVEL=INFO
 
 O script valida `JWT_SECRET_KEY`, CORS, diretório de logs, configurações de banco/MinIO/RabbitMQ e sintaxe Python dos serviços.
 
+---
+
 ## Funcionalidades
 
 ### Upload
 
 - Formatos: PNG, JPG, JPEG, PDF (e outros validados no AI Service: BMP, GIF, WEBP).
-- Armazenamento no MinIO; metadados e status no PostgreSQL.
+- Armazenamento no MinIO; metadados e status em `arch_uploads`.
 
 ### Processamento (AI Service)
 
-- Consumo assíncrono via RabbitMQ (`aio-pika`).
-- Extração visual com `LlmOCRAdapter`; fallback Tesseract quando configurado.
-- Swarm de agentes (Strands) para arquitetura, infraestrutura e desenvolvimento; consolidação em JSON.
+- Consumo assíncrono via RabbitMQ (`aio-pika`, prefetch=1).
+- OCR multimodal com LLM (Gemma 4 26B via OpenRouter); fallback Tesseract.
+- Swarm de agentes Strands (DeepSeek v3.2) para arquitetura, infraestrutura e desenvolvimento; consolidação em JSON.
+- Resultado publicado na fila `diagram.result` — **sem escrita direta em banco de dados**.
 
 ### Relatórios e dashboard
 
 - Componentes, riscos, recomendações e resumo.
-- Listagem por status, anexo original, estatísticas.
-- Feedback com avaliação 1–5 estrelas.
+- Listagem por status e download do anexo original.
+- Estatísticas combinadas: contagens de uploads (banco `arch_uploads`) + avaliações de feedback (banco `arch_reports`).
+- Feedback com avaliação 1–5 estrelas e comentário.
+
+---
+
+## Bancos de dados
+
+O PostgreSQL roda em instância única com dois bancos dedicados, cada um de propriedade exclusiva de um serviço:
+
+| Banco | Dono | Tabelas |
+|-------|------|---------|
+| `arch_uploads` | Upload Service | `uploads`, `users` |
+| `arch_reports` | Report Service | `feedback` |
+
+**Criação automática:**
+- **Docker Compose**: o serviço `postgres-setup` executa `createdb` de forma idempotente após o PostgreSQL ficar disponível.
+- **Kubernetes**: cada pod (upload-service e report-service) possui um `initContainer create-db` que cria o banco antes do container principal iniciar.
+- **Fresh deploy**: o script `infrastructure/postgres/init-databases.sh` cria ambos os bancos na primeira inicialização.
 
 ---
 
@@ -263,12 +309,14 @@ O script valida `JWT_SECRET_KEY`, CORS, diretório de logs, configurações de b
 ### Métricas — Prometheus + Grafana
 
 - Endpoints `/metrics` nos serviços FastAPI (`prometheus-fastapi-instrumentator`).
+- No Kubernetes: auto-descoberta de pods via annotations `prometheus.io/scrape`.
 - Dashboards provisionados: **Arch Analyzer - Overview** e **Arch Analyzer - Logs**.
 
 ### Logs — Loki + Promtail
 
 - Logs JSON estruturados (`timestamp`, `level`, `service`, `name`, `message`).
-- Promtail coleta via socket Docker (`/var/run/docker.sock`).
+- Docker Compose: Promtail coleta via socket Docker (`/var/run/docker.sock`).
+- Kubernetes: Promtail como DaemonSet lendo `/var/log/pods/` — namespace `arch-geral`.
 
 Acesse o Grafana em http://localhost:3000 → Dashboards → **Arch Analyzer - Logs**.
 
@@ -293,7 +341,7 @@ Cada job instala `requirements.txt` + `requirements-dev.txt` do serviço e execu
 |---------|---------------------|-------------------|
 | **upload-service** | `services/upload-service/tests/` | Caso de uso de upload (`test_upload_file.py`), adaptador PostgreSQL |
 | **ai-service** | `services/ai-service/tests/unit/` | Adaptadores LLM, OCR, parser JSON e swarm multiagente (mocks) |
-| **report-service** | `services/report-service/tests/` | Adaptador asyncpg de relatórios e estatísticas |
+| **report-service** | `services/report-service/tests/` | Adaptador asyncpg de feedback e estatísticas |
 
 O `pytest.ini` do AI Service restringe `testpaths` a `tests/unit`, de modo que a pasta `tests/ragas_eval/` **não** entra no `pytest` da pipeline.
 
@@ -322,7 +370,7 @@ Detalhes dos workflows: [`.github/workflows/README.md`](.github/workflows/README
 
 ## Avaliação RAGAS (local)
 
-Além dos testes unitários, o **AI Service** inclui uma avaliação comportamental com [Ragas](https://docs.ragas.io) em [`services/ai-service/tests/ragas_eval/`](services/ai-service/tests/ragas_eval/). Ela exercita o fluxo real do `SwarmLlmAdapter` contra amostras de OCR curadas e aplica critérios em linguagem natural (`AspectCritic`), por exemplo:
+Além dos testes unitários, o **AI Service** inclui uma avaliação comportamental com [Ragas](https://docs.ragas.io) em [`services/ai-service/tests/ragas_eval/`](services/ai-service/tests/ragas_eval/). Ela exercita o fluxo real do `SwarmLlmAdapter` contra amostras de OCR curadas e aplica critérios em linguagem natural (`AspectCritic`):
 
 | Métrica | O que verifica |
 |---------|----------------|
@@ -333,33 +381,20 @@ Além dos testes unitários, o **AI Service** inclui uma avaliação comportamen
 
 ### Por que não roda na nuvem (CI/CD)
 
-Essa avaliação **não** faz parte das pipelines do GitHub Actions. Cada execução dispara chamadas reais ao provedor LLM (swarm + juiz Ragas), o que gera **custo por análise** e tempo de execução elevado — inviável para rodar a cada PR ou deploy. Por isso ela permanece como script manual para uso local ou em avaliações pontuais da equipe.
+Essa avaliação **não** faz parte das pipelines do GitHub Actions. Cada execução dispara chamadas reais ao provedor LLM (swarm + juiz Ragas), o que gera **custo por análise** e tempo de execução elevado — inviável para rodar a cada PR ou deploy.
 
 ### Como rodar localmente
-
-Dependências separadas em `requirements-eval.txt` (não instaladas na CI):
 
 ```bash
 cd services/ai-service
 pip install -r requirements-eval.txt
-```
 
-O script carrega automaticamente o `.env` na raiz do repositório (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `LLM_MODEL`, `LLM_OCR`, etc.).
-
-```bash
-# a partir de services/ai-service — todas as amostras
-python tests/ragas_eval/evals.py
-
-# uma amostra específica
+python tests/ragas_eval/evals.py                               # todas as amostras
 python tests/ragas_eval/evals.py --sample ecommerce_microservices
-
-# sem gravar CSV
-python tests/ragas_eval/evals.py --no-save
+python tests/ragas_eval/evals.py --no-save                     # sem gravar CSV
 ```
 
-Saída: tabela de scores no terminal, média por métrica e relatório CSV em `tests/ragas_eval/results/eval_<timestamp>.csv` (salvo com `--no-save`).
-
-Documentação completa da suíte: [`services/ai-service/tests/ragas_eval/README.md`](services/ai-service/tests/ragas_eval/README.md).
+Documentação completa: [`services/ai-service/tests/ragas_eval/README.md`](services/ai-service/tests/ragas_eval/README.md).
 
 ---
 
@@ -373,7 +408,9 @@ Workflows em [`.github/workflows/`](.github/workflows/README.md):
 | `deploy.yml` | push em `main` ou `hmg` | Testes → build/push GHCR → deploy Kubernetes na VPS |
 | `setup-vps.yml` | manual | Setup inicial da VPS (Kind, Nginx, SSL) |
 
-Manifests Kubernetes: [`infrastructure/k8s/`](infrastructure/k8s/README.md). Scripts de primeira instalação da VPS: [`.vps/README.md`](.vps/README.md).
+**Namespaces Kubernetes:** `arch-prod` (branch main), `arch-hmg` (branch hmg), `arch-geral` (observabilidade compartilhada).
+
+Manifests Kubernetes: [`infrastructure/k8s/`](infrastructure/k8s/README.md). Scripts de setup da VPS: [`.vps/README.md`](.vps/README.md).
 
 ---
 
@@ -406,6 +443,16 @@ python -m http.server 8051
 cd infrastructure
 docker compose logs <servico>
 docker compose ps
+```
+
+### Banco de dados não encontrado (arch_uploads / arch_reports)
+
+O serviço `postgres-setup` cria os bancos automaticamente. Se ele falhar:
+
+```bash
+docker compose logs postgres-setup
+# Recriar manualmente:
+docker compose run --rm postgres-setup
 ```
 
 ### Erro de conexão com banco
@@ -445,7 +492,7 @@ Bucket padrão: `fiap` (configurável via `MINIO_BUCKET`).
 ## Limitações e evoluções
 
 - Qualidade da análise depende da resolução e clareza do diagrama.
-- Estados `RECEIVED` / `PROCESSING` / `DONE` cobrem o fluxo feliz; padronizar `ERROR` no banco é evolução recomendada.
+- Volumes `emptyDir` no Kubernetes perdem dados no restart do pod; para persistência cross-pod usar PVC com `ReadWriteMany`.
 - Endurecer TLS, rotação de segredos e políticas de rede para ambiente real.
 
 ---

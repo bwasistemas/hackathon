@@ -13,7 +13,8 @@ from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.adapters.inbound.http_routes import build_router
-from app.adapters.outbound.asyncpg_reports import create_repositories
+from app.adapters.outbound.asyncpg_reports import create_feedback_repository
+from app.adapters.outbound.http_upload_client import HttpUploadClientAdapter
 from app.adapters.outbound.minio_storage import MinIOStorage
 from app.application.report_management import (
     GetReportUseCase,
@@ -40,18 +41,20 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = load_settings()
-    
-    # Setup logging
+
     setup_logging("report-service")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        """Manage application lifecycle and dependency injection."""
-        report_repo, feedback_repo, db_pool = await create_repositories(
-            settings.database_url
-        )
+        feedback_repo, db_pool = await create_feedback_repository(settings.database_url)
         app.state.db_pool = db_pool
         app.state.minio_storage = MinIOStorage(settings)
+
+        report_repo = HttpUploadClientAdapter(
+            base_url=settings.upload_service_url,
+            username=settings.upload_service_user,
+            password=settings.upload_service_password,
+        )
 
         app.state.get_report_use_case = GetReportUseCase(repository=report_repo)
         app.state.list_reports_use_case = ListReportsUseCase(repository=report_repo)
@@ -60,7 +63,8 @@ def create_app() -> FastAPI:
             report_repository=report_repo,
         )
         app.state.get_statistics_use_case = GetStatisticsUseCase(
-            repository=feedback_repo
+            report_repository=report_repo,
+            feedback_repository=feedback_repo,
         )
 
         yield
@@ -77,7 +81,6 @@ def create_app() -> FastAPI:
 
     Instrumentator().instrument(app).expose(app)
 
-    # Rate limiting
     limiter = Limiter(key_func=get_remote_address)
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, lambda request, exc: JSONResponse(
@@ -85,7 +88,6 @@ def create_app() -> FastAPI:
     ))
     app.add_middleware(SlowAPIMiddleware)
 
-    # Security headers
     app.add_middleware(SecurityHeadersMiddleware)
 
     raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8051")

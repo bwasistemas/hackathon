@@ -32,6 +32,27 @@ spec:
     spec:
       imagePullSecrets:
         - name: ghcr-pull-secret
+      initContainers:
+        - name: create-db
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres -U "$POSTGRES_USER"; do sleep 2; done
+              psql -h postgres -U "$POSTGRES_USER" -tc "SELECT 1 FROM pg_database WHERE datname='arch_uploads'" | grep -q 1 || createdb -h postgres -U "$POSTGRES_USER" arch_uploads
+              echo "create-db: arch_uploads ready."
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: arch-secrets
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: arch-secrets
+                  key: POSTGRES_PASSWORD
       containers:
         - name: upload-service
           image: ${IMAGE_PREFIX}/upload-service:${IMAGE_TAG}
@@ -55,13 +76,8 @@ spec:
                 secretKeyRef:
                   name: arch-secrets
                   key: POSTGRES_PASSWORD
-            - name: POSTGRES_DB
-              valueFrom:
-                configMapKeyRef:
-                  name: arch-config
-                  key: POSTGRES_DB
             - name: DATABASE_URL
-              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)"
+              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/arch_uploads"
           volumeMounts:
             - name: uploads-data
               mountPath: /app/uploads

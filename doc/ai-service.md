@@ -1,68 +1,177 @@
 # AI Service — arquitetura hexagonal
 
-Este documento descreve a organização interna do **AI Service** (`services/ai-service/`), refatorado segundo o estilo **ports and adapters** (arquitetura hexagonal). O objetivo é manter o núcleo da aplicação independente de frameworks web, de provedores de LLM e de tecnologias de fila e banco.
+Descreve a organização interna do **AI Service** (`services/ai-service/`), seguindo o estilo **ports and adapters**. O núcleo da aplicação é independente de frameworks web, provedores de LLM, fila de mensagens e armazenamento.
 
 ## Princípios
 
-- **Domínio** (`app/domain/`): entidades e modelos de resultado da análise; não importa FastAPI, OpenAI, asyncpg nem RabbitMQ.
-- **Aplicação** (`app/application/`): define **portas** (interfaces) e **casos de uso** que orquestram o domínio. Depende apenas do domínio e das abstrações (ports).
+- **Domínio** (`app/domain/`): entidades puras sem dependências externas.
+- **Aplicação** (`app/application/`): define **portas** (interfaces `Protocol`) e **casos de uso** que orquestram o domínio.
 - **Adaptadores** (`app/adapters/`):
-  - **Inbound**: entradas do sistema — HTTP (FastAPI) e consumidor RabbitMQ.
-  - **Outbound**: saídas para sistemas externos — cliente LLM, repositório PostgreSQL (asyncpg), OCR (Tesseract / Pillow / pdf2image).
+  - **Inbound**: HTTP (FastAPI) e consumidor RabbitMQ.
+  - **Outbound**: cliente LLM (OpenAI/OpenRouter), OCR multimodal, Tesseract, MinIO, publicador RabbitMQ.
+- **Composição** (`app/bootstrap.py`): instancia adaptadores, injeta casos de uso e gerencia o ciclo de vida via `lifespan`.
 
-- **Composição** (`app/bootstrap.py`): lê configuração, instancia adaptadores concretos, injeta os casos de uso e registra o ciclo de vida da aplicação (pool do banco, conexão RabbitMQ).
-
-- **Entrada ASGI** (`app/main.py`): expõe `app` para o Uvicorn (`uvicorn app.main:app`).
+> O AI Service **não possui banco de dados próprio**. O resultado da análise é publicado na fila `diagram.result` e cabe ao Upload Service persisti-lo.
 
 ## Estrutura de pastas
 
 ```
 services/ai-service/
 ├── app/
-│   ├── domain/              # Modelos e exceções de domínio
-│   ├── application/       # Portas (protocolos) e casos de uso
+│   ├── domain/
+│   │   ├── models.py          # Component, Risk, AnalysisResult, DiagramTextExtraction
+│   │   └── exceptions.py      # LlmAnalysisError, LlmNotConfiguredError
+│   ├── application/
+│   │   ├── ports.py           # LlmAnalyzerPort, TextExtractionPort, ResultPublisherPort
+│   │   ├── analyze_diagram.py # AnalyzeDiagramUseCase
+│   │   └── process_diagram_upload.py # ProcessDiagramUploadUseCase
 │   ├── adapters/
-│   │   ├── inbound/         # Rotas HTTP, schemas Pydantic, RabbitMQ
-│   │   └── outbound/        # OpenAI, asyncpg, OCR
-│   ├── config.py            # Configuração a partir de variáveis de ambiente
-│   ├── bootstrap.py         # Montagem do FastAPI e wiring
-│   └── main.py              # ASGI app
+│   │   ├── inbound/
+│   │   │   ├── http_routes.py        # GET /health, POST /analyze
+│   │   │   ├── rabbitmq_consumer.py  # Consome fila diagram.upload
+│   │   │   └── schemas.py
+│   │   └── outbound/
+│   │       ├── openai_adapter.py            # OpenAiLlmAdapter (LlmAnalyzerPort)
+│   │       ├── strands_multi_agents_adapter.py  # SwarmLlmAdapter (LlmAnalyzerPort)
+│   │       ├── llm_ocr.py                   # LlmOCRAdapter (OCR multimodal Gemma)
+│   │       ├── tesseract_ocr.py             # TesseractTextExtractor (fallback)
+│   │       ├── minio_storage.py             # MinIOStorage
+│   │       ├── rabbitmq_result_publisher.py # RabbitMQResultPublisher (ResultPublisherPort)
+│   │       └── llm_json_parser.py           # Parser/validador do JSON da IA
+│   ├── config.py       # Settings (Pydantic) carregado de variáveis de ambiente
+│   ├── bootstrap.py    # Wiring de dependências e lifespan do FastAPI
+│   └── main.py         # ASGI app (uvicorn app.main:app)
+├── tests/
+│   ├── unit/           # Testes unitários (sem chamadas reais ao LLM)
+│   └── ragas_eval/     # Avaliação comportamental com Ragas (manual, com custo de API)
 ├── requirements.txt
 └── Dockerfile
 ```
 
 ## Portas (interfaces)
 
-Definidas em `app/application/ports.py`, em termos de responsabilidade:
+Definidas em `app/application/ports.py`:
 
 | Porta | Papel |
-|-------|--------|
-| `LlmAnalyzerPort` | Recebe texto extraído do diagrama e devolve um `AnalysisResult` (componentes, riscos, resumo). |
-| `TextExtractionPort` | Dado um caminho de arquivo no disco, devolve texto (OCR ou leitura de PDF). |
-| `UploadRepositoryPort` | Atualiza status do upload e persiste o payload final da análise no banco. |
-
-Implementações concretas ficam em `app/adapters/outbound/`.
+|-------|-------|
+| `LlmAnalyzerPort` | Recebe texto extraído do diagrama e retorna `AnalysisResult` (components, risks, summary). |
+| `TextExtractionPort` | Dado um caminho de arquivo, retorna o texto extraído (interface do Tesseract). |
+| `ResultPublisherPort` | Publica eventos de resultado na fila `diagram.result` (PROCESSING, DONE, ERROR). |
 
 ## Casos de uso
 
-- **`AnalyzeDiagramUseCase`**: usa apenas `LlmAnalyzerPort`. É o núcleo do endpoint HTTP `POST /analyze`, que permite testar a análise enviando texto diretamente, sem passar pela fila.
-- **`ProcessDiagramUploadUseCase`**: usa `TextExtractionPort`, `LlmAnalyzerPort` e `UploadRepositoryPort`. É o fluxo disparado pelo **RabbitMQ** após um upload: OCR → LLM → persistência.
+### `AnalyzeDiagramUseCase`
+
+Usado pelo endpoint HTTP `POST /analyze`. Recebe texto diretamente e retorna análise. Útil para testes sem passar pela fila.
+
+```
+POST /analyze (texto) → LlmAnalyzerPort.analyze() → AnalysisResult
+```
+
+### `ProcessDiagramUploadUseCase`
+
+Disparado pelo consumidor RabbitMQ. Fluxo completo:
+
+```
+diagram.upload recebida
+    │
+    ├─ publisher.publish_processing(upload_id)          → diagram.result {PROCESSING}
+    │
+    ├─ [se minio://] storage.download_file(file_path)   → arquivo local temporário
+    │
+    ├─ _validate_file()  extensão + tamanho (max 50 MB) + MIME real (python-magic)
+    │
+    ├─ ocr.analyze_diagram(local_path)                  → DiagramTextExtraction
+    │     ├─ Tentativa 1: LlmOCRAdapter (Gemma 4 26B multimodal)
+    │     └─ Fallback: TesseractTextExtractor
+    │
+    ├─ llm.analyze(texto, source_hint)                  → AnalysisResult (Strands swarm)
+    │
+    ├─ publisher.publish_done(upload_id, payload_json)  → diagram.result {DONE}
+    │
+    └─ [erro] publisher.publish_failed(upload_id, msg)  → diagram.result {ERROR}
+```
+
+O `payload_json` contém:
+```json
+{
+  "text": "...",
+  "text_extraction": { "source": "llm_multimodal|tesseract", "multimodal_model": "...", "detail_pt": "..." },
+  "ai": { "components": [...], "risks": [...], "summary": "...", "source_assessment": "..." }
+}
+```
 
 ## Adaptadores outbound
 
-- **OpenAI (`OpenAiLlmAdapter`)**: implementa `LlmAnalyzerPort` com o SDK OpenAI; usa `asyncio.to_thread` para não bloquear o loop de eventos nas chamadas síncronas. Se não houver chave de API, o domínio sinaliza indisponibilidade (`LlmNotConfiguredError`).
-- **PostgreSQL (`AsyncpgUploadRepository`)**: implementa `UploadRepositoryPort` com pool asyncpg. Se o banco não estiver disponível na subida, pode ser usado um **repositório nulo** (`NullUploadRepository`) que não falha o processamento mas não persiste dados.
-- **OCR (`TesseractTextExtractor`)**: implementa `TextExtractionPort` com Pillow, pytesseract e, para PDF, pdf2image + Poppler.
+### OCR — `LlmOCRAdapter`
+
+Extrai texto de imagens e PDFs usando um modelo LLM multimodal (configurado em `LLM_OCR`, padrão `google/gemma-4-26b-a4b-it`). Para PDFs converte páginas em imagens antes de enviar ao modelo. Fallback automático para `TesseractTextExtractor` se o LLM OCR estiver desabilitado (`LLM_OCR_DISABLE=1`) ou falhar.
+
+Limites configuráveis via env:
+
+| Variável | Padrão | Descrição |
+|----------|--------|-----------|
+| `LLM_OCR_MAX_PDF_PAGES` | `15` | Páginas máximas de PDF a processar |
+| `LLM_OCR_MAX_TOKENS` | `4096` | Tokens máximos na resposta OCR |
+| `LLM_OCR_IMAGE_MAX_SIDE` | `2048` | Resolução máxima da imagem |
+| `LLM_OCR_DISABLE` | `false` | Força uso do Tesseract |
+
+### LLM — `SwarmLlmAdapter` (Strands)
+
+Implementa `LlmAnalyzerPort` com um swarm de agentes Strands (framework AWS). Três agentes especializados analisam o diagrama em paralelo/sequência e consolidam o resultado:
+
+- **Agente de arquitetura**: componentes, padrões e camadas
+- **Agente de infraestrutura**: infraestrutura, deploy e operações
+- **Agente de desenvolvimento**: boas práticas, qualidade e segurança
+
+Parâmetros configuráveis: `MAX_HANDOFFS`, `MAX_ITERATIONS`, `EXECUTION_TIMEOUT`, `NODE_TIMEOUT`, `REPETITIVE_HANDOFF_DETECTION_WINDOW`.
+
+### LLM — `OpenAiLlmAdapter`
+
+Implementação alternativa de `LlmAnalyzerPort` usando o SDK OpenAI diretamente (sem swarm). Usado no endpoint `POST /analyze` para testes pontuais.
+
+### Publicador — `RabbitMQResultPublisher`
+
+Implementa `ResultPublisherPort`. Publica na fila `diagram.result` (durable) com `DeliveryMode.PERSISTENT`. Três métodos:
+
+- `publish_processing(upload_id)` → `{upload_id, status: "PROCESSING"}`
+- `publish_done(upload_id, payload_json)` → `{upload_id, status: "DONE", payload_json}`
+- `publish_failed(upload_id, error_message)` → `{upload_id, status: "ERROR", error_message}`
 
 ## Adaptadores inbound
 
-- **HTTP**: rotas em `app/adapters/inbound/http_routes.py`; schemas de request/response em `schemas.py`. O caso de uso de análise é obtido via `app.state` após o startup (lifespan).
-- **RabbitMQ**: `connect_rabbitmq` e `start_diagram_upload_consumer` declaram a fila (por exemplo `diagram.upload`) e encaminham cada mensagem ao `ProcessDiagramUploadUseCase`.
+### HTTP — `http_routes.py`
+
+| Rota | Auth | Descrição |
+|------|------|-----------|
+| `GET /health` | — | Liveness check |
+| `POST /analyze` | JWT | Análise direta por texto (sem fila) |
+
+### RabbitMQ — `rabbitmq_consumer.py`
+
+Declara a fila `diagram.upload` (durable, prefetch=1) e encaminha cada mensagem ao `ProcessDiagramUploadUseCase`. A mensagem deve conter: `upload_id`, `filename`, `file_path`, `content_type`.
+
+## Segurança e middlewares
+
+| Middleware | Função |
+|-----------|--------|
+| `SecurityHeadersMiddleware` | X-Content-Type-Options, X-Frame-Options, HSTS |
+| `RequestSizeLimitMiddleware` | Rejeita requests > 50 MB (413) |
+| `SlowAPIMiddleware` | Rate limiting por IP |
+| `CORSMiddleware` | Restringe origens via `ALLOWED_ORIGINS`; `allow_credentials=False` |
 
 ## Configuração relevante
 
-Variáveis típicas: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `LLM_MODEL`, `DATABASE_URL`, `RABBITMQ_*`. A centralização está em `app/config.py` (`Settings`).
+| Variável | Descrição |
+|----------|-----------|
+| `OPENAI_API_KEY` | Chave do provedor LLM (OpenRouter em produção) |
+| `OPENAI_BASE_URL` | URL base do provedor (padrão: `https://openrouter.ai/api/v1`) |
+| `LLM_MODEL` | Modelo para análise swarm (padrão: `deepseek/deepseek-v3.2`) |
+| `LLM_OCR` | Modelo para OCR multimodal (padrão: `google/gemma-4-26b-a4b-it`) |
+| `RABBITMQ_*` | Host, porta, usuário, senha |
+| `MINIO_*` | Endpoint, credenciais, bucket |
+| `JWT_SECRET_KEY` | Deve coincidir com o do Upload Service |
 
 ## Docker
 
-A imagem instala dependências de sistema necessárias para OCR (por exemplo Tesseract e Poppler) e executa `uvicorn app.main:app` na porta **8003**. Para builds de CI que usam `infrastructure/dockerfiles/Dockerfile.ai`, o contexto de build esperado é o diretório `services/ai-service` (contendo `requirements.txt` e a pasta `app/`).
+A imagem instala dependências de sistema para OCR (Tesseract, Poppler para PDF) e executa `uvicorn app.main:app` na porta **8003**. Contexto de build: `services/ai-service/`.

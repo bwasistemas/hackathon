@@ -7,9 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from slowapi import Limiter
 
-from app.adapters.inbound.schemas import UploadResponse, UploadListItemSchema, UploadDetailSchema, Token
+from app.adapters.inbound.schemas import UploadResponse, UploadListItemSchema, UploadDetailSchema, UploadStatsSchema, Token
 from app.adapters.helpers.auth import create_access_token, verify_token
-from app.application.upload_file import UploadFileUseCase, ListUploadsUseCase, GetUploadUseCase
+from app.application.upload_file import UploadFileUseCase, ListUploadsUseCase, GetUploadUseCase, GetUploadStatsUseCase
 from app.domain.exceptions import FileTooLargeError, InvalidFileTypeError, UploadNotFoundError, StorageError, MessageQueueError
 from app.config import Settings
 
@@ -33,6 +33,11 @@ def get_list_uploads_use_case(request: Request) -> ListUploadsUseCase:
 def get_get_upload_use_case(request: Request) -> GetUploadUseCase:
     """Dependency injection for get upload use case."""
     return request.app.state.get_upload_use_case
+
+
+def get_upload_stats_use_case(request: Request) -> GetUploadStatsUseCase:
+    """Dependency injection for upload stats use case."""
+    return request.app.state.get_upload_stats_use_case
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -164,6 +169,18 @@ def build_router(settings: Settings, limiter: Limiter) -> APIRouter:
                 )
                 for r in results
             ]
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+    @router.get("/stats/uploads", response_model=UploadStatsSchema)
+    async def get_upload_stats(
+        current_user: str = Depends(get_current_user),
+        use_case: GetUploadStatsUseCase = Depends(get_upload_stats_use_case),
+    ):
+        """Return aggregate upload counts — used by report-service stats endpoint."""
+        try:
+            stats = await use_case.execute()
+            return UploadStatsSchema(total=stats["total"], by_status=stats["by_status"])
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e)) from e
 

@@ -349,6 +349,33 @@ jobs:
               --from-literal=GRAFANA_PASSWORD="$GRAFANA_PASSWORD" \
               --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
+            # ── Sincronizar credenciais do RabbitMQ ───────────────────────────
+            # O RabbitMQ persiste usuarios no banco Mnesia (PVC) e nao rele
+            # env vars apos a primeira init. Quando a senha muda nos Secrets,
+            # e necessario atualizar o broker antes que os pods tentem conectar.
+            if kubectl exec -n "$NAMESPACE" rabbitmq-0 -- rabbitmqctl status &>/dev/null 2>&1; then
+              echo "Sincronizando credenciais do RabbitMQ..."
+              kubectl exec -n "$NAMESPACE" rabbitmq-0 -- \
+                rabbitmqctl change_password "$RABBITMQ_USER" "$RABBITMQ_PASSWORD" \
+                && echo "RabbitMQ: senha sincronizada para $RABBITMQ_USER" \
+                || echo "AVISO: falha ao sincronizar senha do RabbitMQ"
+            else
+              echo "AVISO: rabbitmq-0 ainda nao acessivel — senha sera aplicada no primeiro start"
+            fi
+
+            # ── Sincronizar credenciais do PostgreSQL ─────────────────────────
+            # O PostgreSQL persiste o hash da senha no PGDATA (PVC) e nao rele
+            # POSTGRES_PASSWORD apos a primeira init. ALTER USER sincroniza.
+            if kubectl exec -n "$NAMESPACE" postgres-0 -- pg_isready -h 127.0.0.1 &>/dev/null 2>&1; then
+              echo "Sincronizando credenciais do PostgreSQL..."
+              kubectl exec -n "$NAMESPACE" postgres-0 -- \
+                psql -U "$POSTGRES_USER" -c "ALTER USER \"$POSTGRES_USER\" PASSWORD '$POSTGRES_PASSWORD';" postgres \
+                && echo "PostgreSQL: senha sincronizada para $POSTGRES_USER" \
+                || echo "AVISO: falha ao sincronizar senha do PostgreSQL"
+            else
+              echo "AVISO: postgres-0 ainda nao acessivel — senha sera aplicada no primeiro start"
+            fi
+
             # ── Secret KEDA ───────────────────────────────────────────────────
             RABBITMQ_AMQP_URL="amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq.${NAMESPACE}.svc.cluster.local:5672/"
             kubectl create secret generic rabbitmq-keda-auth \
@@ -357,7 +384,7 @@ jobs:
               --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
             # ── Aplicar manifests ─────────────────────────────────────────────
-            ENVSUBST_VARS='${IMAGE_PREFIX} ${IMAGE_TAG} ${NAMESPACE} ${DOMAIN} ${POSTGRES_DB} ${MINIO_BUCKET} ${TZ} ${ALLOWED_ORIGINS} ${FRONTEND_NODEPORT} ${RABBITMQ_MGMT_NODEPORT} ${MINIO_CONSOLE_NODEPORT} ${MAX_REPLICAS} ${QUEUE_MESSAGES_PER_REPLICA}'
+            ENVSUBST_VARS='${IMAGE_PREFIX} ${IMAGE_TAG} ${NAMESPACE} ${DOMAIN} ${POSTGRES_DB} ${MINIO_BUCKET} ${TZ} ${ALLOWED_ORIGINS} ${FRONTEND_NODEPORT} ${RABBITMQ_MGMT_NODEPORT} ${MINIO_CONSOLE_NODEPORT} ${MAX_REPLICAS} ${QUEUE_MESSAGES_PER_REPLICA} ${POSTGRES_USER}'
             for manifest in $(ls "$MANIFESTS_DIR"/*.yaml | sort); do
               echo "Aplicando: $(basename $manifest)..."
               envsubst "$ENVSUBST_VARS" < "$manifest" | kubectl apply --validate=false -n "$NAMESPACE" -f -
@@ -395,10 +422,30 @@ jobs:
                 envsubst "$GERAL_ENVSUBST_VARS" < "$manifest" | kubectl apply --validate=false -f -
               done
               rm -rf /tmp/arch-k8s-geral
+
+              # ── Sincronizar senha do Grafana (arch-geral) ─────────────────
+              # O Grafana persiste a senha admin no banco interno (SQLite/PVC)
+              # e ignora GF_SECURITY_ADMIN_PASSWORD apos a primeira init.
+              # grafana-cli reset-admin-password sincroniza sem reiniciar o pod.
+              if kubectl exec -n arch-geral deploy/grafana -- grafana cli --version &>/dev/null 2>&1; then
+                echo "Sincronizando senha admin do Grafana..."
+                kubectl exec -n arch-geral deploy/grafana -- \
+                  grafana cli admin reset-admin-password "$GRAFANA_PASSWORD" \
+                  && echo "Grafana: senha sincronizada para $GRAFANA_USER" \
+                  || echo "AVISO: falha ao sincronizar senha do Grafana"
+              else
+                echo "AVISO: grafana ainda nao acessivel — senha sera aplicada no primeiro start"
+              fi
             fi
 
             # ── Aguardar rollouts ─────────────────────────────────────────────
             ROLLOUT_FAILED=false
+
+            # Recriar todos os pods para garantir spec e credenciais atualizadas.
+            # Cobre: pods com spec antiga em CrashLoopBackOff, env vars de secrets
+            # alterados e imagens novas ainda nao aplicadas por rolling update travado.
+            echo "Recriando todos os pods em $NAMESPACE..."
+            kubectl delete pods --all -n "$NAMESPACE" --grace-period=5
 
             # Servicos criticos — falha aqui para o deploy
             for deploy in upload-service ai-service report-service frontend; do

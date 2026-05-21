@@ -111,6 +111,39 @@ class AsyncpgUploadRepository(UploadRepositoryPort):
                 upload_id,
             )
 
+    async def mark_processing(self, upload_id: str) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE uploads SET status = 'PROCESSING', updated_at = NOW() WHERE id = $1",
+                upload_id,
+            )
+
+    async def mark_done_with_payload(self, upload_id: str, payload_json: str) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE uploads SET status = 'DONE', updated_at = NOW(), file_path = $1 WHERE id = $2",
+                payload_json,
+                upload_id,
+            )
+
+    async def mark_failed(self, upload_id: str, error_message: str) -> None:
+        import json as _json
+        payload = _json.dumps({"text": "", "ai": {"error": error_message}})
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE uploads SET status = 'ERROR', updated_at = NOW(), file_path = $1 WHERE id = $2",
+                payload,
+                upload_id,
+            )
+
+    async def get_upload_stats(self) -> dict:
+        async with self._pool.acquire() as conn:
+            total = await conn.fetchval("SELECT COUNT(*) FROM uploads")
+            rows = await conn.fetch(
+                "SELECT status, COUNT(*) AS count FROM uploads GROUP BY status"
+            )
+            return {"total": int(total), "by_status": {r["status"]: int(r["count"]) for r in rows}}
+
 
 class NullUploadRepository(UploadRepositoryPort):
     """No-op when the database is unavailable."""
@@ -134,6 +167,18 @@ class NullUploadRepository(UploadRepositoryPort):
 
     async def update_status(self, upload_id: str, status: str) -> None:
         return None
+
+    async def mark_processing(self, upload_id: str) -> None:
+        return None
+
+    async def mark_done_with_payload(self, upload_id: str, payload_json: str) -> None:
+        return None
+
+    async def mark_failed(self, upload_id: str, error_message: str) -> None:
+        return None
+
+    async def get_upload_stats(self) -> dict:
+        return {"total": 0, "by_status": {}}
 
 
 async def create_upload_repository(

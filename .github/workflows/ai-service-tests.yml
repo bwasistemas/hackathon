@@ -3,7 +3,7 @@ name: AI Service Tests
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, hmg]
   workflow_dispatch:
 
 permissions:

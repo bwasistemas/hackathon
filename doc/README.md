@@ -7,7 +7,9 @@ Documentação em português do sistema **Arch Analyzer**: análise automatizada
 | Documento | Descrição |
 |-----------|-----------|
 | [Visão geral da aplicação](aplicacao.md) | Propósito, arquitetura de microsserviços, fluxos, portas, configuração e execução |
-| [AI Service — arquitetura hexagonal](ai-service.md) | Organização interna do serviço de IA (domínio, casos de uso, portas e adaptadores) |
+| [Upload Service — arquitetura hexagonal](upload-service.md) | Recepção de arquivos, JWT, filas RabbitMQ, adaptadores asyncpg/MinIO e ciclo de vida de status |
+| [AI Service — arquitetura hexagonal](ai-service.md) | OCR multimodal, swarm Strands/DeepSeek, portas e adaptadores do serviço de IA |
+| [Report Service — arquitetura hexagonal](report-service.md) | Relatórios via HTTP s2s, feedback, estatísticas e adaptador HttpUploadClientAdapter |
 
 ## Referências rápidas
 

@@ -14,19 +14,39 @@ services:
       <<: *tz
       POSTGRES_USER: ${POSTGRES_USER:-fiap}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fiap}
-      POSTGRES_DB: ${POSTGRES_DB:-fiap}
+      POSTGRES_DB: arch_uploads
     ports:
       - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     networks:
       - arch-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fiap} -d ${POSTGRES_DB:-fiap}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fiap}"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  postgres-setup:
+    image: postgres:16-alpine
+    container_name: arch-analyzer-postgres-setup
+    environment:
+      <<: *tz
+      PGPASSWORD: ${POSTGRES_PASSWORD:-fiap}
+    networks:
+      - arch-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    command: >
+      sh -c "
+        createdb -h postgres -U ${POSTGRES_USER:-fiap} arch_uploads 2>/dev/null || true &&
+        createdb -h postgres -U ${POSTGRES_USER:-fiap} arch_reports 2>/dev/null || true &&
+        echo postgres-setup: databases ready.
+      "
 
   postgres-exporter:
     # Docker Hub (prometheuscommunity/postgres-exporter); evite quay + tags inexistentes (ex.: v0.15.1)
@@ -35,7 +55,7 @@ services:
     environment:
       <<: *tz
       # Senhas com caracteres especiais na URL exigem encoding em DATA_SOURCE_NAME.
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}?sslmode=disable"
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/arch_uploads?sslmode=disable"
     volumes:
       - /etc/localtime:/etc/localtime:ro
     networks:
@@ -104,7 +124,7 @@ services:
       - .env
     environment:
       - TZ=${TZ:-America/Sao_Paulo}
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/arch_uploads
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
       - RABBITMQ_USER=${RABBITMQ_USER:-fiap}
@@ -123,8 +143,8 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8051}
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-setup:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       minio:
@@ -152,7 +172,6 @@ services:
       - .env
     environment:
       - TZ=${TZ:-America/Sao_Paulo}
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
       - RABBITMQ_USER=${RABBITMQ_USER:-fiap}
@@ -200,7 +219,10 @@ services:
       - .env
     environment:
       - TZ=${TZ:-America/Sao_Paulo}
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/${POSTGRES_DB:-fiap}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-fiap}:${POSTGRES_PASSWORD:-fiap}@postgres:5432/arch_reports
+      - UPLOAD_SERVICE_URL=http://upload-service:8001
+      - UPLOAD_SERVICE_USER=${ADMIN_USER}
+      - UPLOAD_SERVICE_PASSWORD=${ADMIN_PASSWORD}
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-fiap}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-fiap1234}
@@ -211,8 +233,8 @@ services:
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8051}
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-setup:
+        condition: service_completed_successfully
       minio:
         condition: service_healthy
     volumes:
